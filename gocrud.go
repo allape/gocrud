@@ -42,20 +42,20 @@ type CRUD[T any] struct {
 	//               starts with `Will` will be called before the default operation,
 	// 	             starts with `Did` will be called after the default operation.
 
-	WillGetAll func(ctx *gin.Context, repo *gorm.DB)
-	DidGetAll  func(record []T, ctx *gin.Context, repo *gorm.DB)
+	WillGetAll func(ctx *gin.Context, repo *gorm.DB) error
+	DidGetAll  func(record []T, ctx *gin.Context, repo *gorm.DB) error
 
 	OnGetOne  func(ctx *gin.Context, repo *gorm.DB) (T, error)
-	DidGetOne func(record *T, ctx *gin.Context, repo *gorm.DB)
+	DidGetOne func(record *T, ctx *gin.Context, repo *gorm.DB) error
 
-	WillPage func(pageNum *int64, pageSize *int64, ctx *gin.Context)
-	DidPage  func(pageNum int64, pageSize int64, list []T, ctx *gin.Context)
+	WillPage func(pageNum *int64, pageSize *int64, ctx *gin.Context) error
+	DidPage  func(pageNum int64, pageSize int64, list []T, ctx *gin.Context) error
 
-	WillSave func(record *T, ctx *gin.Context)
-	DidSave  func(record *T, ctx *gin.Context, result *gorm.DB, repo *gorm.DB)
+	WillSave func(record *T, ctx *gin.Context) error
+	DidSave  func(record *T, ctx *gin.Context, result *gorm.DB, repo *gorm.DB) error
 
 	OnDelete  func(ctx *gin.Context, repo *gorm.DB) (bool, error)
-	DidDelete func(ctx *gin.Context, repo *gorm.DB)
+	DidDelete func(ctx *gin.Context, repo *gorm.DB) error
 
 	MakeOkResponse    func(ctx *gin.Context, data any)
 	MakeErrorResponse func(ctx *gin.Context, suggestedHttpStatusCode int, err error)
@@ -110,13 +110,21 @@ func (c *CRUD[T]) error(context *gin.Context, suggestedHttpStatusCode int, err e
 func (c *CRUD[T]) all(context *gin.Context) {
 	repo := c.repository.Model(c.makeOne())
 	if c.WillGetAll != nil {
-		c.WillGetAll(context, c.repository)
+		err := c.WillGetAll(context, c.repository)
+		if err != nil {
+			c.error(context, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	c.handleSearches(context, repo)
 	list := c.makeArray()
 	repo.Find(&list)
 	if c.DidGetAll != nil {
-		c.DidGetAll(list, context, c.repository)
+		err := c.DidGetAll(list, context, c.repository)
+		if err != nil {
+			c.error(context, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	c.ok(context, list)
 }
@@ -148,7 +156,11 @@ func (c *CRUD[T]) one(context *gin.Context) {
 		}
 	}
 	if c.DidGetOne != nil {
-		c.DidGetOne(&result, context, c.repository)
+		err := c.DidGetOne(&result, context, c.repository)
+		if err != nil {
+			c.error(context, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	c.ok(context, result)
 }
@@ -173,7 +185,11 @@ func (c *CRUD[T]) page(context *gin.Context) {
 	}
 
 	if c.WillPage != nil {
-		c.WillPage(&pageNum, &pageSize, context)
+		err := c.WillPage(&pageNum, &pageSize, context)
+		if err != nil {
+			c.error(context, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	list := c.makeArray()
@@ -186,7 +202,11 @@ func (c *CRUD[T]) page(context *gin.Context) {
 	repo.Find(&list)
 
 	if c.DidPage != nil {
-		c.DidPage(pageNum, pageSize, list, context)
+		err := c.DidPage(pageNum, pageSize, list, context)
+		if err != nil {
+			c.error(context, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	c.ok(context, list)
@@ -211,7 +231,11 @@ func (c *CRUD[T]) save(context *gin.Context) {
 	}
 
 	if c.WillSave != nil {
-		c.WillSave(record, context)
+		err := c.WillSave(record, context)
+		if err != nil {
+			c.error(context, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	res := c.repository.Save(record)
@@ -221,7 +245,11 @@ func (c *CRUD[T]) save(context *gin.Context) {
 	}
 
 	if c.DidSave != nil {
-		c.DidSave(record, context, res, c.repository)
+		err := c.DidSave(record, context, res, c.repository)
+		if err != nil {
+			c.error(context, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	c.ok(context, Ternary[any](
@@ -251,7 +279,11 @@ func (c *CRUD[T]) delete(context *gin.Context) {
 	}
 
 	if c.DidDelete != nil {
-		c.DidDelete(context, c.repository)
+		err := c.DidDelete(context, c.repository)
+		if err != nil {
+			c.error(context, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	if err != nil {
