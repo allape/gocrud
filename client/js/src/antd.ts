@@ -1,5 +1,5 @@
 import { Modal } from "antd";
-import { get as getee, IRequestConfig, stringify } from "./index";
+import C, { get as getee, IRequestConfig, stringify } from "./index";
 
 export async function get<
   T = unknown,
@@ -9,7 +9,7 @@ export async function get<
     onError: async <T>(e: unknown | Error): Promise<T> => {
       return new Promise((resolve, reject) => {
         Modal.confirm({
-          title: "Request Error",
+          title: "Network Error",
           content: `${url}: ${stringify(e)}`,
           okText: "Retry",
           cancelText: "Cancel",
@@ -20,4 +20,10 @@ export async function get<
     },
     ...config,
   });
+}
+
+export default class Crudy<T> extends C<T> {
+  constructor(public readonly baseUrl: string) {
+    super(baseUrl, get);
+  }
 }
