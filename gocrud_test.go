@@ -30,7 +30,7 @@ type User struct {
 	UpdatedAt time.Time `json:"updatedAt" gorm:"autoUpdateTime"`
 }
 
-func TestDefault(t *testing.T) {
+func StartServer(t *testing.T) *gin.Engine {
 	router := gin.New()
 
 	_, err := os.Stat(TestDBName)
@@ -54,10 +54,6 @@ func TestDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	go func() {
-		_ = router.Run(HttpBinding)
-	}()
 
 	user := CRUD[User]{
 		AllowAnyPageSize: true,
@@ -91,6 +87,16 @@ func TestDefault(t *testing.T) {
 	}
 
 	t.Log("Server started on port 8080")
+
+	return router
+}
+
+func TestDefault(t *testing.T) {
+	router := StartServer(t)
+
+	go func() {
+		_ = router.Run(HttpBinding)
+	}()
 
 	time.Sleep(time.Second)
 
@@ -209,4 +215,10 @@ func MakeJSONRequest[T any](method, url string, body any) (*R[T], error) {
 	err = json.NewDecoder(resp.Body).Decode(&result)
 
 	return &result, err
+}
+
+// TestStartServer this will never pass
+func TestStartServer(t *testing.T) {
+	router := StartServer(t)
+	_ = router.Run(HttpBinding)
 }
