@@ -66,18 +66,21 @@ export async function get<
 }
 
 export default class Crudy<T> {
-  constructor(public readonly baseUrl: string) {}
+  private readonly fetcher: typeof fetchee;
+  constructor(public readonly baseUrl: string, fetcher?: typeof fetchee) {
+    this.fetcher = fetcher || get;
+  }
 
   static KeywordsStringify<KEYWORDS = object>(keywords?: KEYWORDS): string {
     return keywords ? `?${new URLSearchParams(keywords)}` : "";
   }
 
   async all<KEYWORDS = object>(keywords?: KEYWORDS): Promise<T[]> {
-    return get<T[]>(`${this.baseUrl}/all${Crudy.KeywordsStringify(keywords)}`);
+    return this.fetcher<T[]>(`${this.baseUrl}/all${Crudy.KeywordsStringify(keywords)}`);
   }
 
   async one(id: string | number): Promise<T> {
-    return get<T>(`${this.baseUrl}?id=${id}`);
+    return this.fetcher<T>(`${this.baseUrl}?id=${id}`);
   }
 
   async page<KEYWORDS = object>(
@@ -85,26 +88,26 @@ export default class Crudy<T> {
     size: number,
     keywords?: KEYWORDS,
   ): Promise<T[]> {
-    return get<T[]>(
+    return this.fetcher<T[]>(
       `${this.baseUrl}/${page}/${size}${Crudy.KeywordsStringify(keywords)}`,
     );
   }
 
   async count<KEYWORDS = object>(keywords?: KEYWORDS): Promise<number> {
-    return get<number>(
+    return this.fetcher<number>(
       `${this.baseUrl}/count${Crudy.KeywordsStringify(keywords)}`,
     );
   }
 
   async save(data: Partial<T>): Promise<T> {
-    return get<T>(this.baseUrl, {
+    return this.fetcher<T>(this.baseUrl, {
       method: "PUT",
       body: JSON.stringify(data),
     });
   }
 
   async delete(id: string | number): Promise<boolean> {
-    return get<boolean>(`${this.baseUrl}?id=${id}`, {
+    return this.fetcher<boolean>(`${this.baseUrl}?id=${id}`, {
       method: "DELETE",
     });
   }
