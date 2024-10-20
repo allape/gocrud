@@ -2,7 +2,7 @@
   "name": "gocrud",
   "version": "0.0.1",
   "description": "JavaScript for gocrud",
-  "main": "src/index.ts",
+  "main": "./index.js",
   "scripts": {
     "build": "tsc"
   },
