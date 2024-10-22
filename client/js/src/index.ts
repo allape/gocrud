@@ -1,33 +1,4 @@
-// region fetch wrapper
-
-export interface IRequestConfig extends RequestInit {
-  onHeadersReceived?: (res: Response) => Promise<void> | void;
-  onError?: (e: unknown | Error) => Promise<void> | void;
-}
-
-export async function fetchee<
-  T = unknown,
-  C extends IRequestConfig = IRequestConfig,
->(url: string, config?: C): Promise<T> {
-  try {
-    const res = await fetch(url, config);
-    config?.onHeadersReceived?.(res);
-    return await res.json();
-  } catch (e) {
-    if (config?.onError) {
-      config.onError(e);
-    }
-    throw e;
-  }
-}
-
-// endregion
-
-export function stringify(err: Error | unknown): string {
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  return `${err?.message || err?.m || err?.msg || err}`;
-}
+import { Fetch, fetchee, IRequestConfig, stringify } from "./fetch";
 
 export type Code = string;
 export type Message = string;
@@ -65,10 +36,25 @@ export async function get<
   return res.d;
 }
 
+export function upload(
+  url: string,
+  file: File | Blob,
+  fetch: Fetch = get,
+): Promise<string> {
+  return fetch<string>(url, {
+    method: "POST",
+    body: file,
+  });
+}
+
 export default class Crudy<T> {
-  private readonly fetcher: typeof fetchee;
-  constructor(public readonly baseUrl: string, fetcher?: typeof fetchee) {
-    this.fetcher = fetcher || get;
+  private readonly fetch: Fetch;
+
+  constructor(
+    public readonly baseUrl: string,
+    fetch?: Fetch,
+  ) {
+    this.fetch = fetch || get;
   }
 
   static KeywordsStringify<KEYWORDS = object>(keywords?: KEYWORDS): string {
@@ -76,11 +62,13 @@ export default class Crudy<T> {
   }
 
   async all<KEYWORDS = object>(keywords?: KEYWORDS): Promise<T[]> {
-    return this.fetcher<T[]>(`${this.baseUrl}/all${Crudy.KeywordsStringify(keywords)}`);
+    return this.fetch<T[]>(
+      `${this.baseUrl}/all${Crudy.KeywordsStringify(keywords)}`,
+    );
   }
 
   async one(id: string | number): Promise<T> {
-    return this.fetcher<T>(`${this.baseUrl}?id=${id}`);
+    return this.fetch<T>(`${this.baseUrl}?id=${id}`);
   }
 
   async page<KEYWORDS = object>(
@@ -88,26 +76,26 @@ export default class Crudy<T> {
     size: number,
     keywords?: KEYWORDS,
   ): Promise<T[]> {
-    return this.fetcher<T[]>(
+    return this.fetch<T[]>(
       `${this.baseUrl}/${page}/${size}${Crudy.KeywordsStringify(keywords)}`,
     );
   }
 
   async count<KEYWORDS = object>(keywords?: KEYWORDS): Promise<number> {
-    return this.fetcher<number>(
+    return this.fetch<number>(
       `${this.baseUrl}/count${Crudy.KeywordsStringify(keywords)}`,
     );
   }
 
   async save(data: Partial<T>): Promise<T> {
-    return this.fetcher<T>(this.baseUrl, {
+    return this.fetch<T>(this.baseUrl, {
       method: "PUT",
       body: JSON.stringify(data),
     });
   }
 
   async delete(id: string | number): Promise<boolean> {
-    return this.fetcher<boolean>(`${this.baseUrl}?id=${id}`, {
+    return this.fetch<boolean>(`${this.baseUrl}?id=${id}`, {
       method: "DELETE",
     });
   }

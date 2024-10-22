@@ -1,5 +1,6 @@
 import { Modal } from "antd";
-import C, { get as getee, IRequestConfig, stringify } from "./index";
+import { Fetch, IRequestConfig, stringify } from './fetch';
+import C, { get as getee } from "./index";
 
 export async function get<
   T = unknown,
@@ -19,6 +20,17 @@ export async function get<
       });
     },
     ...config,
+  });
+}
+
+export function upload(
+  url: string,
+  file: File | Blob,
+  fetch: Fetch = get,
+): Promise<string> {
+  return fetch<string>(url, {
+    method: "POST",
+    body: file,
   });
 }
 

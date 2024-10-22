@@ -42,5 +42,9 @@ describe("test crudy", () => {
 
     const count = await crudy.count<Partial<IUser>>({ deleted: false });
     expect(count).toBe(1);
+
+    const one = await crudy.one(2);
+    expect(one.id).toBe(2);
+    expect(one.name).toBe("user2");
   });
 });

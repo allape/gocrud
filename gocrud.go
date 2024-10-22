@@ -96,14 +96,11 @@ func (c *CRUD[T]) ok(context *gin.Context, data any) {
 	}
 }
 
-func (c *CRUD[T]) error(context *gin.Context, suggestedHttpStatusCode int, err error) {
+func (c *CRUD[T]) error(context *gin.Context, statusCode int, err error) {
 	if c.MakeErrorResponse != nil {
-		c.MakeErrorResponse(context, suggestedHttpStatusCode, err)
+		c.MakeErrorResponse(context, statusCode, err)
 	} else {
-		context.JSON(suggestedHttpStatusCode, R[any]{
-			Code:    fmt.Sprintf("%d", suggestedHttpStatusCode),
-			Message: err.Error(),
-		})
+		MakeErrorResponse(context, statusCode, fmt.Sprintf("%d", statusCode), err)
 	}
 }
 
