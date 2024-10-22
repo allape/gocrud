@@ -6,9 +6,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	"io"
+	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -31,7 +32,9 @@ type User struct {
 }
 
 func StartServer(t *testing.T) *gin.Engine {
-	router := gin.New()
+	engine := gin.New()
+
+	engine.Use(RecoveryHandler(true))
 
 	_, err := os.Stat(TestDBName)
 	if err != nil {
@@ -45,7 +48,9 @@ func StartServer(t *testing.T) *gin.Engine {
 		}
 	}
 
-	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{
+		Logger: logger.Default,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,16 +64,15 @@ func StartServer(t *testing.T) *gin.Engine {
 		AllowAnyPageSize: true,
 		EnableGetAll:     true,
 		SearchHandlers: SearchHandlers{
-			"name": func(db *gorm.DB, values []string, with url.Values) {
-				if ok, name := ValuableStringFromArray(values); ok {
-					db = db.Where("name = ?", name)
-				}
-			},
-			"deleted": func(db *gorm.DB, values []string, with url.Values) {
-				if ok, deleted := ValuableStringFromArray(values); ok {
-					db = db.Where("deleted = ?", deleted == "true")
-				}
-			},
+			"createdAt": SortBy("created_at"),
+			"id": KeywordIn("id", func(value []string) []string {
+				log.Println("id filter:", value)
+				return value
+			}),
+			"name": KeywordLike("name", nil),
+			"deleted": KeywordEqual("deleted", func(value string) any {
+				return value == "true"
+			}),
 		},
 		OnDelete: func(ctx *gin.Context, repo *gorm.DB) (bool, error) {
 			id := ctx.Query("id")
@@ -81,14 +85,12 @@ func StartServer(t *testing.T) *gin.Engine {
 		},
 	}
 
-	err = user.Setup("user", router, db)
+	err = user.Setup("user", engine, db)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	t.Log("Server started on port 8080")
-
-	return router
+	return engine
 }
 
 func TestDefault(t *testing.T) {
@@ -97,6 +99,8 @@ func TestDefault(t *testing.T) {
 	go func() {
 		_ = router.Run(HttpBinding)
 	}()
+
+	t.Log("Server started on port 8080")
 
 	time.Sleep(time.Second)
 
@@ -128,7 +132,7 @@ func TestDefault(t *testing.T) {
 	}
 
 	// test get all
-	all, err := MakeJSONRequest[[]User](http.MethodGet, AddrPrefix+"/user/all", nil)
+	all, err := MakeJSONRequest[[]User](http.MethodGet, AddrPrefix+"/user/all?name=test", nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if all == nil {
@@ -137,6 +141,18 @@ func TestDefault(t *testing.T) {
 		t.Fatal("response code is not 0")
 	} else if len(all.Data) != 2 {
 		t.Fatal("response data length is not 2")
+	}
+
+	// test get all with id filter
+	all, err = MakeJSONRequest[[]User](http.MethodGet, AddrPrefix+"/user/all?id=1&id=3&id=5", nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if all == nil {
+		t.Fatal("response is nil")
+	} else if all.Code != "0" {
+		t.Fatal("response code is not 0")
+	} else if len(all.Data) != 1 {
+		t.Fatal("response data length is not 1")
 	}
 
 	// test page

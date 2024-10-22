@@ -30,6 +30,10 @@ func ValuableStringFromArray(array []string) (bool, string) {
 	return false, ""
 }
 
+func Pointer[T any](t T) *T {
+	return &t
+}
+
 func NowString(pattern *string) string {
 	return time.Now().Format(ValuableString(pattern, "2006-01-02 15:04:05.000"))
 }
