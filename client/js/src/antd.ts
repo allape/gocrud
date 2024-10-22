@@ -1,13 +1,18 @@
 import { Modal } from "antd";
-import { Fetch, IRequestConfig, stringify } from './fetch';
-import C, { get as getee } from "./index";
+import { IRequestConfig, stringify } from "./fetcheese";
+import C, {
+  get as getty,
+  GetFunc,
+  IResponse,
+  upload as uploady,
+} from "./index";
 
 export async function get<
   T = unknown,
-  C extends IRequestConfig = IRequestConfig,
+  C extends IRequestConfig<IResponse<T>, T> = IRequestConfig<IResponse<T>, T>,
 >(url: string, config?: C): Promise<T> {
-  return getee<T>(url, {
-    onError: async <T>(e: unknown | Error): Promise<T> => {
+  return getty<T>(url, {
+    onError: async (e: unknown | Error): Promise<T> => {
       return new Promise((resolve, reject) => {
         Modal.confirm({
           title: "Network Error",
@@ -26,12 +31,9 @@ export async function get<
 export function upload(
   url: string,
   file: File | Blob,
-  fetch: Fetch = get,
+  getty: GetFunc = get,
 ): Promise<string> {
-  return fetch<string>(url, {
-    method: "POST",
-    body: file,
-  });
+  return uploady(url, file, getty);
 }
 
 export default class Crudy<T> extends C<T> {

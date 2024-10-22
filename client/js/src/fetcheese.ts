@@ -1,16 +1,19 @@
-export interface IRequestConfig extends RequestInit {
+export interface IRequestConfig<T = unknown, D = T> extends RequestInit {
   onHeadersReceived?: (res: Response) => Promise<void> | void;
-  onError?: <T>(e: unknown | Error) => Promise<T> | T;
+  onDataReceived?: (data: T) => Promise<D> | D;
+  onError?: (e: unknown | Error) => Promise<D> | D;
 }
 
-export async function fetchee<
+export async function fetcheese<
   T = unknown,
-  C extends IRequestConfig = IRequestConfig,
->(url: string, config?: C): Promise<T> {
+  D = T,
+  C extends IRequestConfig<T, D> = IRequestConfig<T, D>,
+>(url: string, config?: C): Promise<D> {
   try {
     const res = await fetch(url, config);
     config?.onHeadersReceived?.(res);
-    return await res.json();
+    const data = await res.json();
+    return config?.onDataReceived ? await config.onDataReceived(data) : data;
   } catch (e) {
     if (config?.onError) {
       return config.onError(e);
@@ -18,8 +21,6 @@ export async function fetchee<
     throw e;
   }
 }
-
-export type Fetch = typeof fetchee;
 
 export function stringify(err: Error | unknown): string {
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
