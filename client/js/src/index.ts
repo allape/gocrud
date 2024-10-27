@@ -56,7 +56,15 @@ export default class Crudy<T> {
   ) {}
 
   static KeywordsStringify<KEYWORDS = object>(keywords?: KEYWORDS): string {
-    return keywords ? `?${new URLSearchParams(keywords)}` : "";
+    if (!keywords) {
+      return "";
+    }
+    Object.entries(keywords).forEach(([key, value]) => {
+      if (value === undefined) {
+        delete (keywords as Record<string, unknown>)[key];
+      }
+    });
+    return `?${new URLSearchParams(keywords)}`;
   }
 
   async all<KEYWORDS = object>(keywords?: KEYWORDS): Promise<T[]> {
