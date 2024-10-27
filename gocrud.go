@@ -2,7 +2,6 @@ package gocrud
 
 import (
 	"errors"
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/http"
@@ -57,8 +56,9 @@ type CRUD[T any] struct {
 	OnDelete  func(ctx *gin.Context, repo *gorm.DB) (bool, error)
 	DidDelete func(ctx *gin.Context, repo *gorm.DB) error
 
+	Coder             Coder
 	MakeOkResponse    func(ctx *gin.Context, data any)
-	MakeErrorResponse func(ctx *gin.Context, suggestedHttpStatusCode int, err error)
+	MakeErrorResponse func(ctx *gin.Context, code Code, err error)
 
 	prefix     string
 	router     gin.IRouter
@@ -89,18 +89,17 @@ func (c *CRUD[T]) ok(context *gin.Context, data any) {
 		c.MakeOkResponse(context, data)
 	} else {
 		context.JSON(http.StatusOK, R[any]{
-			Code:    "0",
-			Message: "OK",
-			Data:    data,
+			Code: c.Coder.OK(),
+			Data: data,
 		})
 	}
 }
 
-func (c *CRUD[T]) error(context *gin.Context, statusCode int, err error) {
+func (c *CRUD[T]) error(context *gin.Context, code Code, err error) {
 	if c.MakeErrorResponse != nil {
-		c.MakeErrorResponse(context, statusCode, err)
+		c.MakeErrorResponse(context, code, err)
 	} else {
-		MakeErrorResponse(context, statusCode, fmt.Sprintf("%d", statusCode), err)
+		MakeErrorResponse(context, code, err)
 	}
 }
 
@@ -109,7 +108,7 @@ func (c *CRUD[T]) all(context *gin.Context) {
 	if c.WillGetAll != nil {
 		err := c.WillGetAll(context, c.repository)
 		if err != nil {
-			c.error(context, http.StatusInternalServerError, err)
+			c.error(context, c.Coder.InternalServerError(), err)
 			return
 		}
 	}
@@ -119,7 +118,7 @@ func (c *CRUD[T]) all(context *gin.Context) {
 	if c.DidGetAll != nil {
 		err := c.DidGetAll(list, context, c.repository)
 		if err != nil {
-			c.error(context, http.StatusInternalServerError, err)
+			c.error(context, c.Coder.InternalServerError(), err)
 			return
 		}
 	}
@@ -132,22 +131,22 @@ func (c *CRUD[T]) one(context *gin.Context) {
 	if c.OnGetOne != nil {
 		result, err = c.OnGetOne(context, c.repository)
 		if err != nil {
-			c.error(context, http.StatusInternalServerError, err)
+			c.error(context, c.Coder.InternalServerError(), err)
 			return
 		}
 	} else {
 		id := context.Query("id")
 		if id == "" {
-			c.error(context, http.StatusBadRequest, errors.New("invalid ID"))
+			c.error(context, c.Coder.BadRequest(), errors.New("invalid ID"))
 			return
 		}
 		res := c.repository.Model(c.makeOne()).Where("id = ?", id).First(&result)
 		if res.RowsAffected == 0 {
 			if res.Error == nil {
-				c.error(context, http.StatusNotFound, errors.New("record not found"))
+				c.error(context, c.Coder.NotFound(), errors.New("record not found"))
 				return
 			} else {
-				c.error(context, http.StatusInternalServerError, res.Error)
+				c.error(context, c.Coder.InternalServerError(), res.Error)
 				return
 			}
 		}
@@ -155,7 +154,7 @@ func (c *CRUD[T]) one(context *gin.Context) {
 	if c.DidGetOne != nil {
 		err := c.DidGetOne(&result, context, c.repository)
 		if err != nil {
-			c.error(context, http.StatusInternalServerError, err)
+			c.error(context, c.Coder.InternalServerError(), err)
 			return
 		}
 	}
@@ -165,12 +164,12 @@ func (c *CRUD[T]) one(context *gin.Context) {
 func (c *CRUD[T]) page(context *gin.Context) {
 	pageNum, err := strconv.ParseInt(context.Param("pageNum"), 10, 64)
 	if err != nil {
-		c.error(context, http.StatusBadRequest, err)
+		c.error(context, c.Coder.BadRequest(), err)
 		return
 	}
 	pageSize, err := strconv.ParseInt(context.Param("pageSize"), 10, 64)
 	if err != nil {
-		c.error(context, http.StatusBadRequest, err)
+		c.error(context, c.Coder.BadRequest(), err)
 		return
 	}
 
@@ -184,7 +183,7 @@ func (c *CRUD[T]) page(context *gin.Context) {
 	if c.WillPage != nil {
 		err := c.WillPage(&pageNum, &pageSize, context)
 		if err != nil {
-			c.error(context, http.StatusInternalServerError, err)
+			c.error(context, c.Coder.InternalServerError(), err)
 			return
 		}
 	}
@@ -201,7 +200,7 @@ func (c *CRUD[T]) page(context *gin.Context) {
 	if c.DidPage != nil {
 		err := c.DidPage(pageNum, pageSize, list, context)
 		if err != nil {
-			c.error(context, http.StatusInternalServerError, err)
+			c.error(context, c.Coder.InternalServerError(), err)
 			return
 		}
 	}
@@ -223,28 +222,28 @@ func (c *CRUD[T]) save(context *gin.Context) {
 	record := c.makeOne()
 	err := context.ShouldBindJSON(record)
 	if err != nil {
-		c.error(context, http.StatusBadRequest, err)
+		c.error(context, c.Coder.BadRequest(), err)
 		return
 	}
 
 	if c.WillSave != nil {
 		err := c.WillSave(record, context)
 		if err != nil {
-			c.error(context, http.StatusInternalServerError, err)
+			c.error(context, c.Coder.InternalServerError(), err)
 			return
 		}
 	}
 
 	res := c.repository.Save(record)
 	if res.Error != nil {
-		c.error(context, http.StatusInternalServerError, res.Error)
+		c.error(context, c.Coder.InternalServerError(), res.Error)
 		return
 	}
 
 	if c.DidSave != nil {
 		err := c.DidSave(record, context, res, c.repository)
 		if err != nil {
-			c.error(context, http.StatusInternalServerError, err)
+			c.error(context, c.Coder.InternalServerError(), err)
 			return
 		}
 	}
@@ -266,7 +265,7 @@ func (c *CRUD[T]) delete(context *gin.Context) {
 		id := context.Query("id")
 
 		if id == "" {
-			c.error(context, http.StatusBadRequest, errors.New("invalid ID"))
+			c.error(context, c.Coder.BadRequest(), errors.New("invalid ID"))
 			return
 		}
 
@@ -278,13 +277,13 @@ func (c *CRUD[T]) delete(context *gin.Context) {
 	if c.DidDelete != nil {
 		err := c.DidDelete(context, c.repository)
 		if err != nil {
-			c.error(context, http.StatusInternalServerError, err)
+			c.error(context, c.Coder.InternalServerError(), err)
 			return
 		}
 	}
 
 	if err != nil {
-		c.error(context, http.StatusInternalServerError, err)
+		c.error(context, c.Coder.InternalServerError(), err)
 		return
 	}
 
@@ -302,6 +301,10 @@ func (c *CRUD[T]) Setup(prefix string, router gin.IRouter, repository *gorm.DB) 
 	c.router = router
 	c.prefix = prefix
 	c.repository = repository
+
+	if c.Coder == nil {
+		c.Coder = DefaultCoder{}
+	}
 
 	c.DefaultPageSize = Ternary(
 		c.DefaultPageSize <= 0,

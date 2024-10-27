@@ -6,12 +6,12 @@ import (
 )
 
 type R[T any] struct {
-	Code    string `json:"c"`
+	Code    Code   `json:"c"`
 	Message string `json:"m"`
 	Data    T      `json:"d"`
 }
 
-func MakeErrorResponse(context *gin.Context, statusCode int, code string, err any) {
+func MakeErrorResponse(context *gin.Context, code Code, err any) {
 	message := "Internal Server Error"
 
 	if err != nil {
@@ -25,7 +25,7 @@ func MakeErrorResponse(context *gin.Context, statusCode int, code string, err an
 		}
 	}
 
-	context.AbortWithStatusJSON(statusCode, R[any]{
+	context.AbortWithStatusJSON(http.StatusOK, R[any]{
 		Code:    Ternary(code == "", "500", code),
 		Message: message,
 		Data:    err,
@@ -36,7 +36,6 @@ func RecoveryHandler(responseFullError bool) gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, err any) {
 		MakeErrorResponse(
 			c,
-			http.StatusInternalServerError,
 			"500",
 			Ternary(responseFullError, err, nil),
 		)

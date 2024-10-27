@@ -11,9 +11,13 @@ import (
 
 type HttpFileSystemConfig struct {
 	AllowOverwrite bool
+	ErrorCoder     Coder
 }
 
 func NewPostFileHandler(folder string, config HttpFileSystemConfig) gin.HandlerFunc {
+	if config.ErrorCoder == nil {
+		config.ErrorCoder = DefaultCoder{}
+	}
 	return func(context *gin.Context) {
 		relativeFileName := context.Param("filepath")
 		fullFileName := path.Join(folder, relativeFileName)
@@ -23,11 +27,11 @@ func NewPostFileHandler(folder string, config HttpFileSystemConfig) gin.HandlerF
 			if os.IsNotExist(err) {
 				err = os.MkdirAll(baseFolder, os.ModePerm)
 				if err != nil {
-					MakeErrorResponse(context, http.StatusInternalServerError, "500", err)
+					MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), err)
 					return
 				}
 			} else {
-				MakeErrorResponse(context, http.StatusInternalServerError, "500", err)
+				MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), err)
 				return
 			}
 		}
@@ -35,23 +39,23 @@ func NewPostFileHandler(folder string, config HttpFileSystemConfig) gin.HandlerF
 		stat, err := os.Stat(fullFileName)
 		if err == nil {
 			if !config.AllowOverwrite {
-				MakeErrorResponse(context, http.StatusConflict, "409", errors.New("file already exists"))
+				MakeErrorResponse(context, config.ErrorCoder.Conflict(), errors.New("file already exists"))
 				return
 			}
 			if stat.IsDir() {
-				MakeErrorResponse(context, http.StatusInternalServerError, "500", errors.New("file is a directory"))
+				MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), errors.New("file is a directory"))
 				return
 			}
 		} else {
 			if !os.IsNotExist(err) {
-				MakeErrorResponse(context, http.StatusInternalServerError, "500", err)
+				MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), err)
 				return
 			}
 		}
 
 		file, err := os.Create(fullFileName)
 		if err != nil {
-			MakeErrorResponse(context, http.StatusInternalServerError, "500", err)
+			MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), err)
 			return
 		}
 		defer func() {
@@ -61,19 +65,19 @@ func NewPostFileHandler(folder string, config HttpFileSystemConfig) gin.HandlerF
 		n, err := io.Copy(file, context.Request.Body)
 		if err != nil {
 			_ = os.Remove(fullFileName)
-			MakeErrorResponse(context, http.StatusInternalServerError, "500", err)
+			MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), err)
 			return
 		}
 
 		contextLength := context.Request.ContentLength
 		if contextLength > 0 && n != contextLength {
 			_ = os.Remove(fullFileName)
-			MakeErrorResponse(context, http.StatusInternalServerError, "500", errors.New("incomplete write"))
+			MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), errors.New("incomplete write"))
 			return
 		}
 
 		context.JSON(http.StatusOK, R[any]{
-			Code:    "0",
+			Code:    config.ErrorCoder.OK(),
 			Message: "OK",
 			Data:    relativeFileName,
 		})
