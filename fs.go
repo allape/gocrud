@@ -16,7 +16,7 @@ type HttpFileSystemConfig struct {
 
 func NewPostFileHandler(folder string, config HttpFileSystemConfig) gin.HandlerFunc {
 	if config.ErrorCoder == nil {
-		config.ErrorCoder = DefaultCoder{}
+		config.ErrorCoder = &DefaultCoder{}
 	}
 	return func(context *gin.Context) {
 		relativeFileName := context.Param("filepath")

@@ -85,7 +85,8 @@ func startServer(t *testing.T) *gin.Engine {
 		},
 	}
 
-	err = user.Setup("user", engine, db)
+	userGroup := engine.Group("/user")
+	err = user.Setup(userGroup, db)
 	if err != nil {
 		t.Fatal(err)
 	}

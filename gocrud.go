@@ -10,7 +10,7 @@ import (
 	"strconv"
 )
 
-var NilEngineError = errors.New("engine is nil")
+var NilGroupError = errors.New("engine is nil")
 var NilRepositoryError = errors.New("repository is nil")
 
 var (
@@ -60,8 +60,7 @@ type CRUD[T any] struct {
 	MakeOkResponse    func(ctx *gin.Context, data any)
 	MakeErrorResponse func(ctx *gin.Context, code Code, err error)
 
-	prefix     string
-	router     gin.IRouter
+	group      *gin.RouterGroup
 	repository *gorm.DB
 }
 
@@ -290,20 +289,19 @@ func (c *CRUD[T]) delete(context *gin.Context) {
 	c.ok(context, deleted)
 }
 
-func (c *CRUD[T]) Setup(prefix string, router gin.IRouter, repository *gorm.DB) error {
-	if router == nil {
-		return NilEngineError
+func (c *CRUD[T]) Setup(group *gin.RouterGroup, repository *gorm.DB) error {
+	if group == nil {
+		return NilGroupError
 	}
 	if repository == nil {
 		return NilRepositoryError
 	}
 
-	c.router = router
-	c.prefix = prefix
+	c.group = group
 	c.repository = repository
 
 	if c.Coder == nil {
-		c.Coder = DefaultCoder{}
+		c.Coder = &DefaultCoder{}
 	}
 
 	c.DefaultPageSize = Ternary(
@@ -318,27 +316,27 @@ func (c *CRUD[T]) Setup(prefix string, router gin.IRouter, repository *gorm.DB) 
 	)
 
 	if !c.DisableGetOne {
-		c.router.GET(c.prefix, c.one)
+		c.group.GET("", c.one)
 	}
 
 	if c.EnableGetAll {
-		c.router.GET(c.prefix+"/all", c.all)
+		c.group.GET("/all", c.all)
 	}
 
 	if !c.DisablePage {
-		c.router.GET(c.prefix+"/:pageNum/:pageSize", c.page)
+		c.group.GET("/:pageNum/:pageSize", c.page)
 	}
 
 	if !c.DisableCount {
-		c.router.GET(c.prefix+"/count", c.count)
+		c.group.GET("/count", c.count)
 	}
 
 	if !c.DisableSave {
-		c.router.PUT(c.prefix, c.save)
+		c.group.PUT("", c.save)
 	}
 
 	if !c.DisableDelete {
-		c.router.DELETE(c.prefix, c.delete)
+		c.group.DELETE("", c.delete)
 	}
 
 	return nil
