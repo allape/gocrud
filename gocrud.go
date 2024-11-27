@@ -273,17 +273,15 @@ func (c *CRUD[T]) delete(context *gin.Context) {
 		deleted = repo.RowsAffected > 0
 	}
 
-	if c.DidDelete != nil {
+	if err != nil {
+		c.error(context, c.Coder.InternalServerError(), err)
+		return
+	} else if c.DidDelete != nil {
 		err := c.DidDelete(context, c.repository)
 		if err != nil {
 			c.error(context, c.Coder.InternalServerError(), err)
 			return
 		}
-	}
-
-	if err != nil {
-		c.error(context, c.Coder.InternalServerError(), err)
-		return
 	}
 
 	c.ok(context, deleted)
