@@ -10,15 +10,28 @@ import (
 )
 
 type HttpFileSystemConfig struct {
+	AllowUpload    bool
 	AllowOverwrite bool
-	ErrorCoder     Coder
+	Coder          Coder
 }
 
-func NewPostFileHandler(folder string, config HttpFileSystemConfig) gin.HandlerFunc {
-	if config.ErrorCoder == nil {
-		config.ErrorCoder = &DefaultCoder{}
+func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSystemConfig) error {
+	if config == nil {
+		config = &HttpFileSystemConfig{Coder: NewDefaultCoder()}
 	}
-	return func(context *gin.Context) {
+
+	if config.Coder == nil {
+		config.Coder = NewDefaultCoder()
+	}
+
+	group.Static("", folder)
+
+	group.POST("/*filepath", func(context *gin.Context) {
+		if !config.AllowUpload {
+			MakeErrorResponse(context, config.Coder.MethodNotAllowed(), errors.New("upload not allowed"))
+			return
+		}
+
 		relativeFileName := context.Param("filepath")
 		fullFileName := path.Join(folder, relativeFileName)
 		baseFolder := path.Dir(fullFileName)
@@ -27,11 +40,11 @@ func NewPostFileHandler(folder string, config HttpFileSystemConfig) gin.HandlerF
 			if os.IsNotExist(err) {
 				err = os.MkdirAll(baseFolder, os.ModePerm)
 				if err != nil {
-					MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), err)
+					MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 					return
 				}
 			} else {
-				MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), err)
+				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 				return
 			}
 		}
@@ -39,23 +52,23 @@ func NewPostFileHandler(folder string, config HttpFileSystemConfig) gin.HandlerF
 		stat, err := os.Stat(fullFileName)
 		if err == nil {
 			if !config.AllowOverwrite {
-				MakeErrorResponse(context, config.ErrorCoder.Conflict(), errors.New("file already exists"))
+				MakeErrorResponse(context, config.Coder.Conflict(), errors.New("file already exists"))
 				return
 			}
 			if stat.IsDir() {
-				MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), errors.New("file is a directory"))
+				MakeErrorResponse(context, config.Coder.InternalServerError(), errors.New("file is a directory"))
 				return
 			}
 		} else {
 			if !os.IsNotExist(err) {
-				MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), err)
+				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 				return
 			}
 		}
 
 		file, err := os.Create(fullFileName)
 		if err != nil {
-			MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), err)
+			MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 			return
 		}
 		defer func() {
@@ -65,27 +78,22 @@ func NewPostFileHandler(folder string, config HttpFileSystemConfig) gin.HandlerF
 		n, err := io.Copy(file, context.Request.Body)
 		if err != nil {
 			_ = os.Remove(fullFileName)
-			MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), err)
+			MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 			return
 		}
 
 		contextLength := context.Request.ContentLength
 		if contextLength > 0 && n != contextLength {
 			_ = os.Remove(fullFileName)
-			MakeErrorResponse(context, config.ErrorCoder.InternalServerError(), errors.New("incomplete write"))
+			MakeErrorResponse(context, config.Coder.InternalServerError(), errors.New("incomplete write"))
 			return
 		}
 
 		context.JSON(http.StatusOK, R[any]{
-			Code:    config.ErrorCoder.OK(),
-			Message: "OK",
-			Data:    relativeFileName,
+			Code: config.Coder.OK(),
+			Data: relativeFileName,
 		})
-	}
-}
+	})
 
-func NewHttpFileSystem(group *gin.RouterGroup, folder string, config HttpFileSystemConfig) error {
-	group.POST("/*filepath", NewPostFileHandler(folder, config))
-	group.Static("", folder)
 	return nil
 }

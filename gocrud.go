@@ -301,7 +301,7 @@ func (c *CRUD[T]) Setup(group *gin.RouterGroup, repository *gorm.DB) error {
 	c.repository = repository
 
 	if c.Coder == nil {
-		c.Coder = &DefaultCoder{}
+		c.Coder = NewDefaultCoder()
 	}
 
 	c.DefaultPageSize = Ternary(

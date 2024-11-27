@@ -8,7 +8,7 @@ import "testing"
 func _TestStartServer(t *testing.T) {
 	router := startServer(t)
 	static := router.Group("/static")
-	err := NewHttpFileSystem(static, TestData, HttpFileSystemConfig{
+	err := NewHttpFileSystem(static, TestData, &HttpFileSystemConfig{
 		AllowOverwrite: true,
 	})
 	if err != nil {

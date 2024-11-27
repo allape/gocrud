@@ -3,12 +3,12 @@ package gocrud
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"testing"
@@ -66,7 +66,7 @@ func startServer(t *testing.T) *gin.Engine {
 		SearchHandlers: SearchHandlers{
 			"createdAt": SortBy("created_at"),
 			"id": KeywordIn("id", func(value []string) []string {
-				log.Println("id filter:", value)
+				t.Log("id filter:", value)
 				return value
 			}),
 			"name": KeywordLike("name", nil),
@@ -94,6 +94,48 @@ func startServer(t *testing.T) *gin.Engine {
 	return engine
 }
 
+func fetchBytes(method, url string, reader io.Reader, headers map[string]string) ([]byte, error) {
+	req, err := http.NewRequest(method, url, reader)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := HttpClient.Do(req)
+	if err != nil {
+		return nil, err
+	} else if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("expected status code 200, got %d", resp.StatusCode)
+	}
+
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	buf := new(bytes.Buffer)
+	_, err = io.Copy(buf, resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func fetchJSON[T any](method, url string, reader io.Reader, headers map[string]string) (*R[T], error) {
+	bs, err := fetchBytes(method, url, reader, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	var result R[T]
+	err = json.Unmarshal(bs, &result)
+
+	return &result, err
+}
+
 func fetch[T any](method, url string, body any) (*R[T], error) {
 	var reader io.Reader
 
@@ -105,26 +147,9 @@ func fetch[T any](method, url string, body any) (*R[T], error) {
 		reader = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, url, reader)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := HttpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	var result R[T]
-	err = json.NewDecoder(resp.Body).Decode(&result)
-
-	return &result, err
+	return fetchJSON[T](method, url, reader, map[string]string{
+		"Content-Type": "application/json",
+	})
 }
 
 func TestDefault(t *testing.T) {
