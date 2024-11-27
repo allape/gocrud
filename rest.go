@@ -67,22 +67,29 @@ func SortBy(name string) SearchHandler {
 // `"id": KeywordIn("id", nil)` with `?id=1,2,3` -> SELECT ... FROM ... WHERE `id` in (1, 2, 3)
 func KeywordIn(name string, filterFunc func(value []string) []string) SearchHandler {
 	return func(db *gorm.DB, values []string, _ url.Values) {
-		if len(values) == 0 {
-			return
-		}
+		if ok, value := ValuableStringFromArray(values); ok {
+			values = strings.Split(value, ",")
 
-		if filterFunc != nil {
-			values = filterFunc(values)
-		}
+			var parsedValues []string
+			for _, s := range values {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					parsedValues = append(parsedValues, s)
+				}
+			}
 
-		if len(values) == 0 {
-			return
-		}
+			if filterFunc != nil {
+				parsedValues = filterFunc(parsedValues)
+				if len(parsedValues) == 0 {
+					return
+				}
+			}
 
-		db.Where(
-			fmt.Sprintf("`%s` in ?", name),
-			values,
-		)
+			db.Where(
+				fmt.Sprintf("`%s` in ?", name),
+				parsedValues,
+			)
+		}
 	}
 }
 
