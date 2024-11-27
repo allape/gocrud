@@ -1,27 +1,19 @@
 package gocrud
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"io"
 	"net/http"
 	"os"
 	"testing"
 	"time"
 )
 
-const TestDBName = "test.db"
-
 const (
-	HttpBinding = "127.0.0.1:8080"
+	TestDBName = "test.db"
 )
-
-var HttpClient = &http.Client{}
 
 type User struct {
 	ID        uint64    `json:"id" gorm:"primaryKey"`
@@ -31,7 +23,7 @@ type User struct {
 	UpdatedAt time.Time `json:"updatedAt" gorm:"autoUpdateTime"`
 }
 
-func startServer(t *testing.T) *gin.Engine {
+func startServer(t *testing.T) (*gin.Engine, string) {
 	engine := gin.New()
 
 	engine.Use(RecoveryHandler(true))
@@ -91,85 +83,22 @@ func startServer(t *testing.T) *gin.Engine {
 		t.Fatal(err)
 	}
 
-	return engine
-}
-
-func fetchBytes(method, url string, reader io.Reader, headers map[string]string) ([]byte, error) {
-	req, err := http.NewRequest(method, url, reader)
-	if err != nil {
-		return nil, err
-	}
-
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	resp, err := HttpClient.Do(req)
-	if err != nil {
-		return nil, err
-	} else if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("expected status code 200, got %d", resp.StatusCode)
-	}
-
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	buf := new(bytes.Buffer)
-	_, err = io.Copy(buf, resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
-}
-
-func fetchJSON[T any](method, url string, reader io.Reader, headers map[string]string) (*R[T], error) {
-	bs, err := fetchBytes(method, url, reader, headers)
-	if err != nil {
-		return nil, err
-	}
-
-	var result R[T]
-	err = json.Unmarshal(bs, &result)
-
-	return &result, err
-}
-
-func fetch[T any](method, url string, body any) (*R[T], error) {
-	var reader io.Reader
-
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		reader = bytes.NewReader(data)
-	}
-
-	return fetchJSON[T](method, url, reader, map[string]string{
-		"Content-Type": "application/json",
-	})
+	return engine, "127.0.0.1:8080"
 }
 
 func TestDefault(t *testing.T) {
-	router := startServer(t)
+	router, binding := startServer(t)
 
 	go func() {
-		_ = router.Run(HttpBinding)
+		_ = router.Run(binding)
 	}()
 
 	t.Log("Server started on port 8080")
 
-	time.Sleep(time.Second)
-
-	for i := 0; i < 3; i++ {
-		t.Log(3-i, "...")
-		time.Sleep(time.Second)
-	}
+	Wait(t)
 
 	//goland:noinspection HttpUrlsUsage
-	const AddrPrefix = "http://" + HttpBinding
+	var AddrPrefix = "http://" + binding
 
 	// test save
 	u1, err := fetch[*User](http.MethodPut, AddrPrefix+"/user", User{Name: "test1"})
@@ -257,4 +186,19 @@ func TestDefault(t *testing.T) {
 	} else if !u1.Data.Deleted {
 		t.Fatal("response data deleted is false")
 	}
+}
+
+// TestStartServer used by frontend testing
+//
+//goland:noinspection GoUnusedFunction
+func _TestStartServer(t *testing.T) {
+	router, binding := startServer(t)
+	static := router.Group("/static")
+	err := NewHttpFileSystem(static, TestData, &HttpFileSystemConfig{
+		AllowOverwrite: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = router.Run(binding)
 }

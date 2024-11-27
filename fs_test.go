@@ -2,8 +2,6 @@ package gocrud
 
 import (
 	"bytes"
-	crand "crypto/rand"
-	"errors"
 	"github.com/gin-gonic/gin"
 	"io"
 	"math/rand"
@@ -11,38 +9,22 @@ import (
 	"os"
 	"path"
 	"testing"
-	"time"
 )
 
-// large memory usage
-
 const (
-	TestData     = "testdata"
-	MegaByte     = 1024 * 1024
 	TestFileName = "/test1/test.bin"
 )
 
-func NewRandomBytes(size int) ([]byte, error) {
-	random := make([]byte, size)
-	n, err := crand.Read(random)
-	if err != nil {
-		return nil, err
-	}
-	random = random[:n]
-	if len(random) == 0 {
-		return nil, errors.New("random is empty")
-	}
-	return random, nil
-}
-
 func TestStaticServ(t *testing.T) {
+	const HttpBinding = "127.0.0.1:8081"
+
 	engine := gin.New()
 
 	group1 := engine.Group("/static1")
 	group2 := engine.Group("/static2")
 	group3 := engine.Group("/static3")
 
-	coder := NewDefaultCoder()
+	coder := RestCoder
 
 	err := NewHttpFileSystem(group1, TestData, &HttpFileSystemConfig{
 		AllowUpload:    true,
@@ -75,10 +57,7 @@ func TestStaticServ(t *testing.T) {
 		_ = engine.Run(HttpBinding)
 	}()
 
-	for i := 0; i < 3; i++ {
-		t.Log(3-i, "...")
-		time.Sleep(time.Second)
-	}
+	Wait(t)
 
 	randomBytes, err := NewRandomBytes(10*MegaByte + rand.Intn(100)*MegaByte)
 	if err != nil {

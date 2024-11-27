@@ -9,10 +9,11 @@ import (
 	"os"
 	"path"
 	"testing"
-	"time"
 )
 
 func TestNewSingleHTMLServe(t *testing.T) {
+	const HttpBinding = "127.0.0.1:8082"
+
 	err := os.MkdirAll(TestData, 0755)
 	if err != nil {
 		t.Fatal(err)
@@ -46,10 +47,7 @@ func TestNewSingleHTMLServe(t *testing.T) {
 		_ = router.Run(HttpBinding)
 	}()
 
-	for i := 0; i < 3; i++ {
-		t.Log(3-i, "...")
-		time.Sleep(time.Second)
-	}
+	Wait(t)
 
 	//goland:noinspection HttpUrlsUsage
 	url := fmt.Sprintf("http://%s/ui/index.html", HttpBinding)

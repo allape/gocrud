@@ -17,11 +17,11 @@ type HttpFileSystemConfig struct {
 
 func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSystemConfig) error {
 	if config == nil {
-		config = &HttpFileSystemConfig{Coder: NewDefaultCoder()}
+		config = &HttpFileSystemConfig{Coder: RestCoder}
 	}
 
 	if config.Coder == nil {
-		config.Coder = NewDefaultCoder()
+		config.Coder = RestCoder
 	}
 
 	group.Static("", folder)

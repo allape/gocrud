@@ -26,7 +26,7 @@ func MakeErrorResponse(context *gin.Context, code Code, err any) {
 	}
 
 	context.AbortWithStatusJSON(http.StatusOK, R[any]{
-		Code:    Ternary(code == "", "500", code),
+		Code:    Ternary(code == "", RestCoder.InternalServerError(), code),
 		Message: message,
 		Data:    err,
 	})
@@ -36,8 +36,10 @@ func RecoveryHandler(responseFullError bool) gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, err any) {
 		MakeErrorResponse(
 			c,
-			"500",
+			RestCoder.InternalServerError(),
 			Ternary(responseFullError, err, nil),
 		)
 	})
 }
+
+var RestCoder = NewDefaultCoder()

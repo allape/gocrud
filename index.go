@@ -20,7 +20,7 @@ func NewSingleHTMLServe(group *gin.RouterGroup, indexHTMLFile string, config *Si
 
 	coder := config.Coder
 	if coder == nil {
-		coder = NewDefaultCoder()
+		coder = RestCoder
 	}
 
 	group.StaticFile("/", indexHTMLFile)
