@@ -182,6 +182,7 @@ func _TestStartServer(t *testing.T) {
 	static := router.Group("/static")
 	err := NewHttpFileSystem(static, TestData, &HttpFileSystemConfig{
 		AllowOverwrite: true,
+		AllowUpload:    true,
 	})
 	if err != nil {
 		t.Fatal(err)
