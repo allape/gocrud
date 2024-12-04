@@ -42,7 +42,7 @@ type CRUD[T any] struct {
 	// 	             starts with `Did` will be called after the default operation.
 
 	WillGetAll func(ctx *gin.Context, repo *gorm.DB) error
-	DidGetAll  func(record []T, ctx *gin.Context, repo *gorm.DB) error
+	DidGetAll  func(records []T, ctx *gin.Context, repo *gorm.DB) error
 
 	OnGetOne  func(ctx *gin.Context, repo *gorm.DB) (T, error)
 	DidGetOne func(record *T, ctx *gin.Context, repo *gorm.DB) error

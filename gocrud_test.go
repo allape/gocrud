@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"testing"
-	"time"
 )
 
 const (
@@ -16,11 +15,8 @@ const (
 )
 
 type User struct {
-	ID        uint64    `json:"id" gorm:"primaryKey"`
-	Name      string    `json:"name"`
-	Deleted   bool      `json:"deleted" gorm:"default:false"`
-	CreatedAt time.Time `json:"createdAt" gorm:"autoCreateTime"`
-	UpdatedAt time.Time `json:"updatedAt" gorm:"autoUpdateTime"`
+	Base
+	Name string `json:"name"`
 }
 
 func startServer(t *testing.T) (*gin.Engine, string) {
@@ -61,20 +57,10 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 				t.Log("id filter:", value)
 				return value
 			}),
-			"name": KeywordLike("name", nil),
-			"deleted": KeywordEqual("deleted", func(value string) any {
-				return value == "true"
-			}),
+			"name":    KeywordLike("name", nil),
+			"deleted": HandleSoftDeleteSearch,
 		},
-		OnDelete: func(ctx *gin.Context, repo *gorm.DB) (bool, error) {
-			id := ctx.Query("id")
-			if id == "" {
-				return false, nil
-			}
-
-			result := repo.Model(&User{}).Where("id = ? and deleted = false", id).Update("deleted", true)
-			return result.RowsAffected > 0, result.Error
-		},
+		OnDelete: NewSoftDeleteHandler[User](),
 	}
 
 	userGroup := engine.Group("/user")
@@ -183,8 +169,8 @@ func TestDefault(t *testing.T) {
 		t.Fatal("response is nil")
 	} else if u1.Code != "0" {
 		t.Fatal("response code is not 0")
-	} else if !u1.Data.Deleted {
-		t.Fatal("response data deleted is false")
+	} else if u1.Data.DeletedAt == nil {
+		t.Fatal("expected deleted user")
 	}
 }
 
