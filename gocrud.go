@@ -10,8 +10,10 @@ import (
 	"strconv"
 )
 
-var NilGroupError = errors.New("engine is nil")
-var NilRepositoryError = errors.New("repository is nil")
+var (
+	NilGroupError      = errors.New("engine is nil")
+	NilRepositoryError = errors.New("database is nil")
+)
 
 var (
 	DefaultPageSizes = []int64{10, 20, 50, 100}
@@ -19,14 +21,14 @@ var (
 )
 
 type (
-	SearchHandler  = func(db *gorm.DB, values []string, with url.Values)
+	SearchHandler  = func(db *gorm.DB, values []string, with url.Values) *gorm.DB
 	SearchHandlers = map[string]SearchHandler
 )
 
 type CRUD[T any] struct {
-	AllowAnyPageSize bool
-	DefaultPageSize  int64
-	PageSizes        []int64
+	DisallowAnyPageSize bool
+	DefaultPageSize     int64
+	PageSizes           []int64
 
 	SearchHandlers SearchHandlers
 
@@ -41,300 +43,308 @@ type CRUD[T any] struct {
 	//               starts with `Will` will be called before the default operation,
 	// 	             starts with `Did` will be called after the default operation.
 
-	WillGetAll func(ctx *gin.Context, repo *gorm.DB) error
-	DidGetAll  func(records []T, ctx *gin.Context, repo *gorm.DB) error
+	WillGetAll func(context *gin.Context, db *gorm.DB) *gorm.DB
+	DidGetAll  func(records []T, context *gin.Context, db *gorm.DB)
 
-	OnGetOne  func(ctx *gin.Context, repo *gorm.DB) (T, error)
-	DidGetOne func(record *T, ctx *gin.Context, repo *gorm.DB) error
+	WillGetOne func(context *gin.Context, db *gorm.DB) *gorm.DB
+	DidGetOne  func(record *T, context *gin.Context, db *gorm.DB)
 
-	WillPage func(pageNum *int64, pageSize *int64, ctx *gin.Context) error
-	DidPage  func(pageNum int64, pageSize int64, list []T, ctx *gin.Context) error
+	WillCount func(context *gin.Context, db *gorm.DB) *gorm.DB
+	DidCount  func(count *int64, context *gin.Context, db *gorm.DB)
 
-	WillSave func(record *T, ctx *gin.Context) error
-	DidSave  func(record *T, ctx *gin.Context, result *gorm.DB, repo *gorm.DB) error
+	WillPage func(pageNum *int64, pageSize *int64, context *gin.Context, db *gorm.DB) *gorm.DB
+	DidPage  func(pageNum int64, pageSize int64, list []T, context *gin.Context, db *gorm.DB)
 
-	OnDelete  func(ctx *gin.Context, repo *gorm.DB) (bool, error)
-	DidDelete func(ctx *gin.Context, repo *gorm.DB) error
+	WillSave func(record *T, context *gin.Context)
+	DidSave  func(record *T, context *gin.Context, result *gorm.DB, db *gorm.DB)
+
+	WillDelete func(context *gin.Context, db *gorm.DB)
+	OnDelete   func(context *gin.Context, db *gorm.DB) bool
+	DidDelete  func(context *gin.Context, db *gorm.DB)
 
 	Coder             Coder
-	MakeOkResponse    func(ctx *gin.Context, data any)
-	MakeErrorResponse func(ctx *gin.Context, code Code, err error)
+	MakeOkResponse    func(context *gin.Context, data any)
+	MakeErrorResponse func(context *gin.Context, code Code, err error)
 
-	group      *gin.RouterGroup
-	repository *gorm.DB
+	group    *gin.RouterGroup
+	database *gorm.DB
 }
 
-func (c *CRUD[T]) makeOne() *T {
+func (crudy *CRUD[T]) makeOne() *T {
 	return new(T)
 }
 
-func (c *CRUD[T]) makeArray() []T {
+func (crudy *CRUD[T]) makeArray() []T {
 	return make([]T, 0)
 }
 
-func (c *CRUD[T]) handleSearches(context *gin.Context, repo *gorm.DB) {
-	if c.SearchHandlers != nil {
+func (crudy *CRUD[T]) handleSearches(context *gin.Context, db *gorm.DB) *gorm.DB {
+	if crudy.SearchHandlers != nil {
 		with := context.Request.URL.Query()
 		for key, value := range with {
-			if handler, ok := c.SearchHandlers[key]; ok {
-				handler(repo, value, with)
+			if handler, ok := crudy.SearchHandlers[key]; ok {
+				db = handler(db, value, with)
 			}
 		}
 	}
+	return db
 }
 
-func (c *CRUD[T]) ok(context *gin.Context, data any) {
-	if c.MakeOkResponse != nil {
-		c.MakeOkResponse(context, data)
+func (crudy *CRUD[T]) ok(context *gin.Context, data any) {
+	if crudy.MakeOkResponse != nil {
+		crudy.MakeOkResponse(context, data)
 	} else {
 		context.JSON(http.StatusOK, R[any]{
-			Code: c.Coder.OK(),
+			Code: crudy.Coder.OK(),
 			Data: data,
 		})
 	}
 }
 
-func (c *CRUD[T]) error(context *gin.Context, code Code, err error) {
-	if c.MakeErrorResponse != nil {
-		c.MakeErrorResponse(context, code, err)
+func (crudy *CRUD[T]) error(context *gin.Context, code Code, err error) {
+	if crudy.MakeErrorResponse != nil {
+		crudy.MakeErrorResponse(context, code, err)
 	} else {
 		MakeErrorResponse(context, code, err)
 	}
 }
 
-func (c *CRUD[T]) all(context *gin.Context) {
-	repo := c.repository.Model(c.makeOne())
-	if c.WillGetAll != nil {
-		err := c.WillGetAll(context, c.repository)
-		if err != nil {
-			c.error(context, c.Coder.InternalServerError(), err)
+func (crudy *CRUD[T]) all(context *gin.Context) {
+	db := crudy.database.Model(crudy.makeOne())
+	db = crudy.handleSearches(context, db)
+
+	if crudy.WillGetAll != nil {
+		if db = crudy.WillGetAll(context, db); context.IsAborted() {
 			return
 		}
 	}
-	c.handleSearches(context, repo)
-	list := c.makeArray()
-	repo.Find(&list)
-	if c.DidGetAll != nil {
-		err := c.DidGetAll(list, context, c.repository)
-		if err != nil {
-			c.error(context, c.Coder.InternalServerError(), err)
+
+	list := crudy.makeArray()
+	err := db.Find(&list).Error
+	if err != nil {
+		crudy.error(context, crudy.Coder.InternalServerError(), err)
+		return
+	}
+
+	if crudy.DidGetAll != nil {
+		if crudy.DidGetAll(list, context, crudy.database); context.IsAborted() {
 			return
 		}
 	}
-	c.ok(context, list)
+
+	crudy.ok(context, list)
 }
 
-func (c *CRUD[T]) one(context *gin.Context) {
-	var err error
+func (crudy *CRUD[T]) one(context *gin.Context) {
 	var result T
-	if c.OnGetOne != nil {
-		result, err = c.OnGetOne(context, c.repository)
-		if err != nil {
-			c.error(context, c.Coder.InternalServerError(), err)
-			return
-		}
-	} else {
-		id := context.Query("id")
-		if id == "" {
-			c.error(context, c.Coder.BadRequest(), errors.New("invalid ID"))
-			return
-		}
-		res := c.repository.Model(c.makeOne()).Where("id = ?", id).First(&result)
-		if res.RowsAffected == 0 {
-			if res.Error == nil {
-				c.error(context, c.Coder.NotFound(), errors.New("record not found"))
-				return
-			} else {
-				c.error(context, c.Coder.InternalServerError(), res.Error)
-				return
-			}
-		}
+
+	id := context.Param("id")
+	if id == "" {
+		crudy.error(context, crudy.Coder.BadRequest(), errors.New("invalid ID"))
+		return
 	}
-	if c.DidGetOne != nil {
-		err := c.DidGetOne(&result, context, c.repository)
-		if err != nil {
-			c.error(context, c.Coder.InternalServerError(), err)
+
+	if crudy.WillGetOne != nil {
+		if crudy.WillGetOne(context, crudy.database); context.IsAborted() {
 			return
 		}
 	}
-	c.ok(context, result)
+
+	err := crudy.database.Model(crudy.makeOne()).First(&result, id).Error
+	if err != nil {
+		crudy.error(context, crudy.Coder.NotFound(), err)
+		return
+	}
+
+	if crudy.DidGetOne != nil {
+		if crudy.DidGetOne(&result, context, crudy.database); context.IsAborted() {
+			return
+		}
+	}
+
+	crudy.ok(context, result)
 }
 
-func (c *CRUD[T]) page(context *gin.Context) {
+func (crudy *CRUD[T]) page(context *gin.Context) {
 	pageNum, err := strconv.ParseInt(context.Param("pageNum"), 10, 64)
 	if err != nil {
-		c.error(context, c.Coder.BadRequest(), err)
+		crudy.error(context, crudy.Coder.BadRequest(), err)
 		return
 	}
 	pageSize, err := strconv.ParseInt(context.Param("pageSize"), 10, 64)
 	if err != nil {
-		c.error(context, c.Coder.BadRequest(), err)
+		crudy.error(context, crudy.Coder.BadRequest(), err)
 		return
 	}
 
 	if pageNum <= 0 {
 		pageNum = 1
 	}
-	if pageSize <= 0 || (!c.AllowAnyPageSize && !slices.Contains(c.PageSizes, pageSize)) {
-		pageSize = c.DefaultPageSize
+	if pageSize <= 0 || (crudy.DisallowAnyPageSize && !slices.Contains(crudy.PageSizes, pageSize)) {
+		pageSize = crudy.DefaultPageSize
 	}
 
-	if c.WillPage != nil {
-		err := c.WillPage(&pageNum, &pageSize, context)
-		if err != nil {
-			c.error(context, c.Coder.InternalServerError(), err)
+	list := crudy.makeArray()
+	db := crudy.database.Model(crudy.makeOne())
+
+	db = crudy.handleSearches(context, db)
+
+	if crudy.WillPage != nil {
+		if crudy.WillPage(&pageNum, &pageSize, context, db); context.IsAborted() {
 			return
 		}
 	}
 
-	list := c.makeArray()
-	repo := c.repository.Model(c.makeOne())
+	db.Offset(int((pageNum - 1) * pageSize))
+	db.Limit(int(pageSize))
+	err = db.Find(&list).Error
+	if err != nil {
+		crudy.error(context, crudy.Coder.InternalServerError(), err)
+		return
+	}
 
-	c.handleSearches(context, repo)
-
-	repo.Offset(int((pageNum - 1) * pageSize))
-	repo.Limit(int(pageSize))
-	repo.Find(&list)
-
-	if c.DidPage != nil {
-		err := c.DidPage(pageNum, pageSize, list, context)
-		if err != nil {
-			c.error(context, c.Coder.InternalServerError(), err)
+	if crudy.DidPage != nil {
+		if crudy.DidPage(pageNum, pageSize, list, context, db); context.IsAborted() {
 			return
 		}
 	}
 
-	c.ok(context, list)
+	crudy.ok(context, list)
 }
 
-func (c *CRUD[T]) count(context *gin.Context) {
-	repo := c.repository.Model(c.makeOne())
-	c.handleSearches(context, repo)
+func (crudy *CRUD[T]) count(context *gin.Context) {
+	db := crudy.database.Model(crudy.makeOne())
+	db = crudy.handleSearches(context, db)
+
+	if crudy.WillCount != nil {
+		if db = crudy.WillCount(context, db); context.IsAborted() {
+			return
+		}
+	}
 
 	var count int64
-	repo.Count(&count)
+	err := db.Count(&count).Error
+	if err != nil {
+		crudy.error(context, crudy.Coder.InternalServerError(), err)
+		return
+	}
 
-	c.ok(context, count)
+	if crudy.DidCount != nil {
+		if crudy.DidCount(&count, context, db); context.IsAborted() {
+			return
+		}
+	}
+
+	crudy.ok(context, count)
 }
 
-func (c *CRUD[T]) save(context *gin.Context) {
-	record := c.makeOne()
+func (crudy *CRUD[T]) save(context *gin.Context) {
+	record := crudy.makeOne()
 	err := context.ShouldBindJSON(record)
 	if err != nil {
-		c.error(context, c.Coder.BadRequest(), err)
+		crudy.error(context, crudy.Coder.BadRequest(), err)
 		return
 	}
 
-	if c.WillSave != nil {
-		err := c.WillSave(record, context)
-		if err != nil {
-			c.error(context, c.Coder.InternalServerError(), err)
+	if crudy.WillSave != nil {
+		if crudy.WillSave(record, context); context.IsAborted() {
 			return
 		}
 	}
 
-	res := c.repository.Save(record)
+	res := crudy.database.Save(record)
 	if res.Error != nil {
-		c.error(context, c.Coder.InternalServerError(), res.Error)
+		crudy.error(context, crudy.Coder.InternalServerError(), res.Error)
 		return
 	}
 
-	if c.DidSave != nil {
-		err := c.DidSave(record, context, res, c.repository)
-		if err != nil {
-			c.error(context, c.Coder.InternalServerError(), err)
+	if crudy.DidSave != nil {
+		if crudy.DidSave(record, context, res, crudy.database); context.IsAborted() {
 			return
 		}
 	}
 
-	c.ok(context, Ternary[any](
+	crudy.ok(context, Ternary[any](
 		res.RowsAffected > 0,
 		record,
 		false,
 	))
 }
 
-func (c *CRUD[T]) delete(context *gin.Context) {
-	var deleted = false
-	var err error
+func (crudy *CRUD[T]) delete(context *gin.Context) {
+	deleted := false
 
-	if c.OnDelete != nil {
-		deleted, err = c.OnDelete(context, c.repository)
-	} else {
-		id := context.Query("id")
-
-		if id == "" {
-			c.error(context, c.Coder.BadRequest(), errors.New("invalid ID"))
+	if crudy.WillDelete != nil {
+		if crudy.WillDelete(context, crudy.database); context.IsAborted() {
 			return
 		}
-
-		repo := c.repository.Delete(c.makeOne(), id)
-		err = repo.Error
-		deleted = repo.RowsAffected > 0
 	}
 
-	if err != nil {
-		c.error(context, c.Coder.InternalServerError(), err)
+	if deleted = crudy.OnDelete(context, crudy.database); context.IsAborted() {
 		return
-	} else if c.DidDelete != nil {
-		err := c.DidDelete(context, c.repository)
-		if err != nil {
-			c.error(context, c.Coder.InternalServerError(), err)
+	}
+
+	if crudy.DidDelete != nil {
+		if crudy.DidDelete(context, crudy.database); context.IsAborted() {
 			return
 		}
 	}
 
-	c.ok(context, deleted)
+	crudy.ok(context, deleted)
 }
 
-func (c *CRUD[T]) Setup(group *gin.RouterGroup, repository *gorm.DB) error {
+func New[T any](group *gin.RouterGroup, database *gorm.DB, crudy CRUD[T]) error {
 	if group == nil {
 		return NilGroupError
 	}
-	if repository == nil {
+	if database == nil {
 		return NilRepositoryError
 	}
 
-	c.group = group
-	c.repository = repository
+	crudy.group = group
+	crudy.database = database
 
-	if c.Coder == nil {
-		c.Coder = RestCoder
+	if crudy.Coder == nil {
+		crudy.Coder = RestCoder
 	}
 
-	c.DefaultPageSize = Ternary(
-		c.DefaultPageSize <= 0,
+	crudy.DefaultPageSize = Ternary(
+		crudy.DefaultPageSize <= 0,
 		DefaultPageSize,
-		c.DefaultPageSize,
+		crudy.DefaultPageSize,
 	)
-	c.PageSizes = Ternary(
-		len(c.PageSizes) > 0,
-		c.PageSizes,
+	crudy.PageSizes = Ternary(
+		len(crudy.PageSizes) > 0,
+		crudy.PageSizes,
 		DefaultPageSizes,
 	)
 
-	if !c.DisableGetOne {
-		c.group.GET("", c.one)
+	if crudy.OnDelete == nil {
+		crudy.OnDelete = NewHardDeleteHandler[T](crudy.Coder)
 	}
 
-	if c.EnableGetAll {
-		c.group.GET("/all", c.all)
+	if !crudy.DisablePage {
+		crudy.group.GET("/page/:pageNum/:pageSize", crudy.page)
 	}
 
-	if !c.DisablePage {
-		c.group.GET("/:pageNum/:pageSize", c.page)
+	if crudy.EnableGetAll {
+		crudy.group.GET("/all", crudy.all)
 	}
 
-	if !c.DisableCount {
-		c.group.GET("/count", c.count)
+	if !crudy.DisableCount {
+		crudy.group.GET("/count", crudy.count)
 	}
 
-	if !c.DisableSave {
-		c.group.PUT("", c.save)
+	if !crudy.DisableGetOne {
+		crudy.group.GET("/one/:id", crudy.one)
 	}
 
-	if !c.DisableDelete {
-		c.group.DELETE("", c.delete)
+	if !crudy.DisableSave {
+		crudy.group.PUT("", crudy.save)
+	}
+
+	if !crudy.DisableDelete {
+		crudy.group.DELETE("/:id", crudy.delete)
 	}
 
 	return nil

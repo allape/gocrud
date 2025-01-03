@@ -1,41 +1,59 @@
 package gocrud
 
 import (
-	"errors"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/url"
 	"time"
 )
 
+type ID uint64
+
 type Base struct {
-	ID        uint64     `json:"id"        gorm:"primaryKey"`
+	ID        ID         `json:"id"        gorm:"primaryKey"`
 	CreatedAt time.Time  `json:"createdAt" gorm:"autoCreateTime"`
 	UpdatedAt time.Time  `json:"updatedAt" gorm:"autoUpdateTime"`
 	DeletedAt *time.Time `json:"deletedAt"`
 }
 
-func NewSoftDeleteHandler[T any]() func(ctx *gin.Context, repo *gorm.DB) (bool, error) {
+func NewHardDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gorm.DB) bool {
 	var record T
-	return func(context *gin.Context, repo *gorm.DB) (bool, error) {
-		id := context.Query("id")
-
+	return func(context *gin.Context, db *gorm.DB) bool {
+		id := context.Param("id")
 		if id == "" {
-			return false, errors.New("invalid ID")
+			MakeErrorResponse(context, coder.BadRequest(), "invalid ID")
+			return false
 		}
 
-		res := repo.Model(record).Where("id = ?", id).UpdateColumn("deleted_at", time.Now())
+		res := db.Delete(&record, id)
 
-		return res.RowsAffected > 0, res.Error
+		return res.RowsAffected > 0
 	}
 }
 
-func HandleSoftDeleteSearch(db *gorm.DB, values []string, _ url.Values) {
+func NewSoftDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gorm.DB) bool {
+	var record T
+	return func(context *gin.Context, db *gorm.DB) bool {
+		id := context.Param("id")
+
+		if id == "" {
+			MakeErrorResponse(context, coder.BadRequest(), "invalid ID")
+			return false
+		}
+
+		res := db.Model(&record).Where("id = ?", id).UpdateColumn("deleted_at", time.Now())
+
+		return res.RowsAffected > 0
+	}
+}
+
+func HandleSoftDeleteSearch(db *gorm.DB, values []string, _ url.Values) *gorm.DB {
 	if ok, deleted := ValuableStringFromArray(values); ok {
 		if deleted == "false" {
-			db = db.Where("deleted_at is null")
+			db = db.Where("deleted_at IS NULL")
 		} else {
-			db = db.Where("deleted_at is not null")
+			db = db.Where("deleted_at IS NOT NULL")
 		}
 	}
+	return db
 }

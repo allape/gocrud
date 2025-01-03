@@ -48,9 +48,8 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 		t.Fatal(err)
 	}
 
-	user := CRUD[User]{
-		AllowAnyPageSize: true,
-		EnableGetAll:     true,
+	err = New(engine.Group("/user"), db, CRUD[User]{
+		EnableGetAll: true,
 		SearchHandlers: SearchHandlers{
 			"createdAt": SortBy("created_at"),
 			"id": KeywordIn("id", func(value []string) []string {
@@ -58,13 +57,11 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 				return value
 			}),
 			"name":    KeywordLike("name", nil),
+			"name_eq": KeywordEqual("name", nil),
 			"deleted": HandleSoftDeleteSearch,
 		},
-		OnDelete: NewSoftDeleteHandler[User](),
-	}
-
-	userGroup := engine.Group("/user")
-	err = user.Setup(userGroup, db)
+		OnDelete: NewSoftDeleteHandler[User](RestCoder),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +127,7 @@ func TestDefault(t *testing.T) {
 	}
 
 	// test page
-	page, err := fetch[[]User](http.MethodGet, AddrPrefix+"/user/1/1", nil)
+	page, err := fetch[[]User](http.MethodGet, AddrPrefix+"/user/page/1/1", nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if page == nil {
@@ -144,9 +141,13 @@ func TestDefault(t *testing.T) {
 	}
 
 	// test delete
-	_, err = fetch[any](http.MethodDelete, AddrPrefix+"/user?id=1", nil)
+	deleted, err := fetch[bool](http.MethodDelete, AddrPrefix+"/user/1", nil)
 	if err != nil {
 		t.Fatal(err)
+	} else if deleted.Code != "0" {
+		t.Fatalf("expected code 0, got %s", deleted.Code)
+	} else if !deleted.Data {
+		t.Fatal("response is not true")
 	}
 
 	// test count
@@ -162,7 +163,7 @@ func TestDefault(t *testing.T) {
 	}
 
 	// test deleted user
-	u1, err = fetch[*User](http.MethodGet, AddrPrefix+"/user?id=1", nil)
+	u1, err = fetch[*User](http.MethodGet, AddrPrefix+"/user/one/1", nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if u1 == nil || u1.Data == nil {
