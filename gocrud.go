@@ -55,8 +55,8 @@ type CRUD[T any] struct {
 	WillPage func(pageNum *int64, pageSize *int64, context *gin.Context, db *gorm.DB) *gorm.DB
 	DidPage  func(pageNum int64, pageSize int64, list []T, context *gin.Context, db *gorm.DB)
 
-	WillSave func(record *T, context *gin.Context)
-	DidSave  func(record *T, context *gin.Context, result *gorm.DB, db *gorm.DB)
+	WillSave func(record *T, context *gin.Context, db *gorm.DB)
+	DidSave  func(record *T, context *gin.Context, db *gorm.DB)
 
 	WillDelete func(context *gin.Context, db *gorm.DB)
 	OnDelete   func(context *gin.Context, db *gorm.DB) bool
@@ -247,7 +247,7 @@ func (crudy *CRUD[T]) save(context *gin.Context) {
 	}
 
 	if crudy.WillSave != nil {
-		if crudy.WillSave(record, context); context.IsAborted() {
+		if crudy.WillSave(record, context, crudy.database); context.IsAborted() {
 			return
 		}
 	}
@@ -259,7 +259,7 @@ func (crudy *CRUD[T]) save(context *gin.Context) {
 	}
 
 	if crudy.DidSave != nil {
-		if crudy.DidSave(record, context, res, crudy.database); context.IsAborted() {
+		if crudy.DidSave(record, context, res); context.IsAborted() {
 			return
 		}
 	}
