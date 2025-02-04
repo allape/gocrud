@@ -48,7 +48,7 @@ func NewSoftDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gor
 }
 
 func HandleSoftDeleteSearch(db *gorm.DB, values []string, _ url.Values) *gorm.DB {
-	if ok, deleted := ValuableStringFromArray(values); ok {
+	if ok, deleted := ValuableArray(values); ok {
 		if deleted == "false" {
 			db = db.Where("deleted_at IS NULL")
 		} else {

@@ -5,9 +5,11 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"log"
 	"net/http"
 	"os"
 	"testing"
+	"time"
 )
 
 const (
@@ -17,6 +19,7 @@ const (
 type User struct {
 	Base
 	Name string `json:"name"`
+	Age  int    `json:"age"`
 }
 
 func startServer(t *testing.T) (*gin.Engine, string) {
@@ -37,7 +40,11 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 	}
 
 	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{
-		Logger: logger.Default,
+		Logger: logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
+			SlowThreshold: 200 * time.Millisecond,
+			LogLevel:      logger.Info,
+			Colorful:      true,
+		}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +66,7 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 			"name":    KeywordLike("name", nil),
 			"name_eq": KeywordEqual("name", nil),
 			"deleted": HandleSoftDeleteSearch,
+			"age_gte": KeywordStatement("age", OperatorGte, NumericValidate),
 		},
 		OnDelete: NewSoftDeleteHandler[User](RestCoder),
 	})
@@ -84,7 +92,7 @@ func TestDefault(t *testing.T) {
 	var AddrPrefix = "http://" + binding
 
 	// test save
-	u1, err := fetch[*User](http.MethodPut, AddrPrefix+"/user", User{Name: "test1"})
+	u1, err := fetch[*User](http.MethodPut, AddrPrefix+"/user", User{Name: "test1", Age: 10})
 	if err != nil {
 		t.Fatal(err)
 	} else if u1 == nil || u1.Data == nil {
@@ -97,7 +105,7 @@ func TestDefault(t *testing.T) {
 		t.Fatal("response data name is not test")
 	}
 
-	_, err = fetch[User](http.MethodPut, AddrPrefix+"/user", User{Name: "test2"})
+	_, err = fetch[User](http.MethodPut, AddrPrefix+"/user", User{Name: "test2", Age: 9})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,8 +122,32 @@ func TestDefault(t *testing.T) {
 		t.Fatal("response data length is not 2")
 	}
 
+	// test KeywordStatement
+	all, err = fetch[[]User](http.MethodGet, AddrPrefix+"/user/all?age_gte=10", nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if all == nil {
+		t.Fatal("response is nil")
+	} else if all.Code != "0" {
+		t.Fatal("response code is not 0")
+	} else if len(all.Data) != 1 {
+		t.Fatal("response data length is not 1")
+	}
+
+	// test KeywordStatement
+	all, err = fetch[[]User](http.MethodGet, AddrPrefix+"/user/all?age_gte=abc", nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if all == nil {
+		t.Fatal("response is nil")
+	} else if all.Code != "0" {
+		t.Fatal("response code is not 0")
+	} else if len(all.Data) != 2 {
+		t.Fatal("response data length is not 2")
+	}
+
 	// test get all with id filter
-	all, err = fetch[[]User](http.MethodGet, AddrPrefix+"/user/all?id=1&id=3&id=5", nil)
+	all, err = fetch[[]User](http.MethodGet, AddrPrefix+"/user/all?id=1,3,5", nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if all == nil {

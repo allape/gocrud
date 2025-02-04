@@ -80,10 +80,11 @@ func (crudy *CRUD[T]) makeArray() []T {
 
 func (crudy *CRUD[T]) handleSearches(context *gin.Context, db *gorm.DB) *gorm.DB {
 	if crudy.SearchHandlers != nil {
-		with := context.Request.URL.Query()
-		for key, value := range with {
+		query := context.Request.URL.Query()
+		for key, value := range query {
 			if handler, ok := crudy.SearchHandlers[key]; ok {
-				db = handler(db, value, with)
+				slices.Reverse(value)
+				db = handler(db, value, query)
 			}
 		}
 	}
