@@ -106,8 +106,8 @@ func TestStaticServ(t *testing.T) {
 	result, err := fetchJSON[any](http.MethodPost, url, bytes.NewReader(randomBytes), nil)
 	if err != nil {
 		t.Fatal(err)
-	} else if result.Code != coder.Conflict() {
-		t.Fatalf("response status is not conflict, got %s", result.Code)
+	} else if result.Data != TestFileName {
+		t.Fatalf("response data is not %s, got %s", TestFileName, result.Data)
 	}
 
 	// test not allowed to upload
