@@ -52,7 +52,12 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 		stat, err := os.Stat(fullFileName)
 		if err == nil {
 			if !config.AllowOverwrite {
-				MakeErrorResponse(context, config.Coder.Conflict(), errors.New("file already exists"))
+				//MakeErrorResponse(context, config.Coder.Conflict(), errors.New("file already exists"))
+				context.JSON(http.StatusOK, R[any]{
+					Code:    config.Coder.OK(),
+					Message: "file already exists",
+					Data:    relativeFileName,
+				})
 				return
 			}
 			if stat.IsDir() {
