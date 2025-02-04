@@ -105,9 +105,13 @@ func TestDefault(t *testing.T) {
 		t.Fatal("response data name is not test")
 	}
 
-	_, err = fetch[User](http.MethodPut, AddrPrefix+"/user", User{Name: "test2", Age: 9})
+	u2, err := fetch[User](http.MethodPut, AddrPrefix+"/user", User{Name: "test2", Age: 9})
 	if err != nil {
 		t.Fatal(err)
+	} else if u2 == nil {
+		t.Fatal("response is nil")
+	} else if u2.Code != "0" {
+		t.Fatal("response code is not 0")
 	}
 
 	// test get all
@@ -170,6 +174,30 @@ func TestDefault(t *testing.T) {
 		t.Fatal("response data length is not 1")
 	} else if page.Data[0].Name != "test1" {
 		t.Fatal("response data name is not test1")
+	}
+
+	// test update
+	time.Sleep(time.Second)
+	editedU1, err := fetch[*User](http.MethodPut, AddrPrefix+"/user", User{Base: Base{ID: 1}, Name: "test1", Age: 12})
+	if err != nil {
+		t.Fatal(err)
+	} else if editedU1 == nil || editedU1.Data == nil {
+		t.Fatal("response is nil")
+	} else if editedU1.Code != "0" {
+		t.Fatal("response code is not 0")
+	} else if editedU1.Data.ID != 1 {
+		t.Fatal("response data id is not 1")
+	}
+
+	editedU1, err = fetch[*User](http.MethodGet, AddrPrefix+"/user/one/1", nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if editedU1 == nil || editedU1.Data == nil {
+		t.Fatal("response is nil")
+	} else if editedU1.Data.CreatedAt.Unix() != u1.Data.CreatedAt.Unix() {
+		t.Fatal("response data created_at is not equal")
+	} else if editedU1.Data.UpdatedAt.Unix() == u1.Data.UpdatedAt.Unix() {
+		t.Fatal("response data updated_at is equal")
 	}
 
 	// test delete

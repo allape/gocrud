@@ -11,7 +11,7 @@ type ID uint64
 
 type Base struct {
 	ID        ID         `json:"id"        gorm:"primaryKey"`
-	CreatedAt time.Time  `json:"createdAt" gorm:"autoCreateTime"`
+	CreatedAt time.Time  `json:"createdAt" gorm:"autoCreateTime;<-:create"`
 	UpdatedAt time.Time  `json:"updatedAt" gorm:"autoUpdateTime"`
 	DeletedAt *time.Time `json:"deletedAt"`
 }
