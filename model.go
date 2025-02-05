@@ -1,6 +1,7 @@
 package gocrud
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/url"
@@ -47,13 +48,20 @@ func NewSoftDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gor
 	}
 }
 
-func HandleSoftDeleteSearch(db *gorm.DB, values []string, _ url.Values) *gorm.DB {
-	if ok, deleted := ValuableArray(values); ok {
-		if deleted == "false" {
-			db = db.Where("deleted_at IS NULL")
-		} else {
-			db = db.Where("deleted_at IS NOT NULL")
-		}
+func NewSoftDeleteSearchHandler(tableName string) SearchHandler {
+	fieldName := "`deleted_at`"
+	if tableName != "" {
+		fieldName = fmt.Sprintf("`%s`.%s", tableName, fieldName)
 	}
-	return db
+
+	return func(db *gorm.DB, values []string, _ url.Values) *gorm.DB {
+		if ok, deleted := ValuableArray(values); ok {
+			if deleted == "false" {
+				db = db.Where(fmt.Sprintf("%s IS NULL", fieldName))
+			} else {
+				db = db.Where(fmt.Sprintf("%s IS NOT NULL", fieldName))
+			}
+		}
+		return db
+	}
 }

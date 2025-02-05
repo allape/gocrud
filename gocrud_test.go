@@ -65,7 +65,7 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 			}),
 			"name":    KeywordLike("name", nil),
 			"name_eq": KeywordEqual("name", nil),
-			"deleted": HandleSoftDeleteSearch,
+			"deleted": NewSoftDeleteSearchHandler(""),
 			"age_gte": KeywordStatement("age", OperatorGte, NumericValidate),
 		},
 		OnDelete: NewSoftDeleteHandler[User](RestCoder),
