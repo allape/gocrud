@@ -53,7 +53,7 @@ func KeywordIn(name string, vt ValueTransformer[[]string, []string]) SearchHandl
 	return KeywordStatement(name, OperatorIn, func(value string) any {
 		array := strings.Split(value, ",")
 		if vt != nil {
-			array = vt(strings.Split(value, ","))
+			array = vt(array)
 			if len(array) == 0 {
 				return nil
 			}
