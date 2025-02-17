@@ -80,19 +80,3 @@ func fetchJSON[T any](method, url string, reader io.Reader, headers map[string]s
 
 	return &result, err
 }
-
-func fetch[T any](method, url string, body any) (*R[T], error) {
-	var reader io.Reader
-
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		reader = bytes.NewReader(data)
-	}
-
-	return fetchJSON[T](method, url, reader, map[string]string{
-		"Content-Type": "application/json",
-	})
-}
