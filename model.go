@@ -5,10 +5,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
 type ID uint64
+
+type IBase interface {
+	GetID() ID
+}
 
 type Base struct {
 	ID        ID         `json:"id"        gorm:"primaryKey"`
@@ -64,4 +70,40 @@ func NewSoftDeleteSearchHandler(tableName string) SearchHandler {
 		}
 		return db
 	}
+}
+
+func IDsFromCommaSplitString(css string) []ID {
+	var ids []ID
+	for _, s := range strings.Split(css, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+
+		id, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			continue
+		}
+
+		ids = append(ids, ID(id))
+	}
+	return ids
+}
+
+func ContainsByBase[T IBase](array []T, one T) bool {
+	for _, item := range array {
+		if item.GetID() == one.GetID() {
+			return true
+		}
+	}
+	return false
+}
+
+func ContainsByID[T IBase](array []T, id ID) bool {
+	for _, item := range array {
+		if item.GetID() == id {
+			return true
+		}
+	}
+	return false
 }

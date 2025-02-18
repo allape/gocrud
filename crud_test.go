@@ -16,9 +16,14 @@ const (
 )
 
 type User struct {
+	IBase
 	Base
 	Name string `json:"name"`
 	Age  int    `json:"age"`
+}
+
+func (u User) GetID() ID {
+	return u.ID
 }
 
 func startServer(t *testing.T) (*gin.Engine, string) {
