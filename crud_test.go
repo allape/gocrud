@@ -1,12 +1,16 @@
 package gocrud
 
 import (
+	"bytes"
+	"encoding/base64"
+	censored "github.com/allape/gocensored"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,7 +20,7 @@ const (
 )
 
 type User struct {
-	IBase
+	IBase `gorm:"-"`
 	Base
 	Name string `json:"name"`
 	Age  int    `json:"age"`
@@ -24,6 +28,12 @@ type User struct {
 
 func (u User) GetID() ID {
 	return u.ID
+}
+
+type SecretUser struct {
+	IBase `gorm:"-"`
+	Base
+	Name string `json:"name" censored:"aes.base64"`
 }
 
 func startServer(t *testing.T) (*gin.Engine, string) {
@@ -54,12 +64,12 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 		t.Fatal(err)
 	}
 
-	err = db.AutoMigrate(&User{})
+	err = db.AutoMigrate(&User{}, &SecretUser{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = New(engine.Group("/user"), db, CRUD[User]{
+	err = New(engine.Group("/user"), db, Crud[User]{
 		EnableGetAll: true,
 		SearchHandlers: SearchHandlers{
 			"createdAt": SortBy("created_at"),
@@ -74,7 +84,35 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 			"age_gte":         KeywordStatement("age", OperatorGte, NumericValidate),
 		},
 		OnDelete: NewSoftDeleteHandler[User](RestCoder),
+		WillSave: func(record *User, context *gin.Context, db *gorm.DB) {
+			if strings.Contains(record.Name, "freak") {
+				MakeErrorResponse(context, RestCoder.BadRequest(), "freak is not allowed")
+				return
+			}
+		},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	censor, err := censored.NewDefaultCensor(&censored.Config{
+		Password: []byte("123456789_0"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = New(engine.Group("/vip-user"), db, Crud[SecretUser]{
+		EnableGetAll: true,
+		GetCensor: func(_ *gin.Context, _ *gorm.DB) (*censored.Censor, error) {
+			return censor, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = New(engine.Group("/vip-user-in-public"), db, Crud[SecretUser]{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +186,14 @@ func TestDefault(t *testing.T) {
 		t.Fatal("user2's id is not 2")
 	} else if u2.Name != "test2" {
 		t.Fatal("user2's name is not test2")
+	}
+
+	// test save with invalid name
+	uFreak, err := crudy.Save(&User{Name: "freak", Age: 10})
+	if err == nil {
+		t.Fatal("expected error")
+	} else if uFreak != nil {
+		t.Fatal("user freak is not nil")
 	}
 
 	// test get all
@@ -265,6 +311,71 @@ func TestDefault(t *testing.T) {
 		t.Fatal("response is nil")
 	} else if u1.DeletedAt == nil {
 		t.Fatal("expected deleted user")
+	}
+
+	// test vip
+	vipCrudy, err := NewCrudy[SecretUser](
+		CrudyBasicOptions[SecretUser]{
+			BaseURL: AddrPrefix + "/vip-user",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vipInPublicCrudy, err := NewCrudy[SecretUser](
+		CrudyBasicOptions[SecretUser]{
+			BaseURL: AddrPrefix + "/vip-user-in-public",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = vipCrudy.Save(&SecretUser{
+		Name: "I am a freak",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	freak, err := vipCrudy.One(1)
+	if err != nil {
+		t.Fatal(err)
+	} else if freak == nil {
+		t.Fatal("freak is nil")
+	} else if !strings.Contains(freak.Name, "freak") {
+		t.Fatal("freak is not decensored")
+	}
+
+	freaks, err := vipCrudy.Page(1, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(freaks) != 1 {
+		t.Fatal("freaks length is not 1")
+	}
+
+	freaks, err = vipCrudy.All(nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(freaks) != 1 {
+		t.Fatal("freaks length is not 1")
+	}
+
+	publicFreak, err := vipInPublicCrudy.One(1)
+	if err != nil {
+		t.Fatal(err)
+	} else if publicFreak == nil {
+		t.Fatal("public freak is nil")
+	} else if publicFreak.Name == freak.Name {
+		t.Fatal("public freak is not censored")
+	}
+
+	freakName, err := base64.StdEncoding.DecodeString(publicFreak.Name)
+	if err != nil {
+		t.Fatal(err)
+	} else if bytes.Compare(freakName, []byte(freak.Name)) == 0 {
+		t.Fatal("public freak is not censored")
 	}
 }
 

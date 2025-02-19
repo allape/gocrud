@@ -2,6 +2,7 @@ package gocrud
 
 import (
 	"errors"
+	censored "github.com/allape/gocensored"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/http"
@@ -25,7 +26,7 @@ type (
 	SearchHandlers = map[string]SearchHandler
 )
 
-type CRUD[T any] struct {
+type Crud[T any] struct {
 	DisallowAnyPageSize bool
 	DefaultPageSize     int64
 	PageSizes           []int64
@@ -65,20 +66,21 @@ type CRUD[T any] struct {
 	Coder             Coder
 	MakeOkResponse    func(context *gin.Context, data any)
 	MakeErrorResponse func(context *gin.Context, code Code, err error)
+	GetCensor         func(context *gin.Context, db *gorm.DB) (*censored.Censor, error)
 
 	group    *gin.RouterGroup
 	database *gorm.DB
 }
 
-func (crud *CRUD[T]) makeOne() *T {
+func (crud *Crud[T]) makeOne() *T {
 	return new(T)
 }
 
-func (crud *CRUD[T]) makeArray() []T {
+func (crud *Crud[T]) makeArray() []T {
 	return make([]T, 0)
 }
 
-func (crud *CRUD[T]) handleSearches(context *gin.Context, db *gorm.DB) *gorm.DB {
+func (crud *Crud[T]) handleSearches(context *gin.Context, db *gorm.DB) *gorm.DB {
 	if crud.SearchHandlers != nil {
 		query := context.Request.URL.Query()
 		for key, value := range query {
@@ -91,7 +93,7 @@ func (crud *CRUD[T]) handleSearches(context *gin.Context, db *gorm.DB) *gorm.DB 
 	return db
 }
 
-func (crud *CRUD[T]) ok(context *gin.Context, data any) {
+func (crud *Crud[T]) ok(context *gin.Context, data any) {
 	if crud.MakeOkResponse != nil {
 		crud.MakeOkResponse(context, data)
 	} else {
@@ -102,7 +104,7 @@ func (crud *CRUD[T]) ok(context *gin.Context, data any) {
 	}
 }
 
-func (crud *CRUD[T]) error(context *gin.Context, code Code, err error) {
+func (crud *Crud[T]) error(context *gin.Context, code Code, err error) {
 	if crud.MakeErrorResponse != nil {
 		crud.MakeErrorResponse(context, code, err)
 	} else {
@@ -110,7 +112,7 @@ func (crud *CRUD[T]) error(context *gin.Context, code Code, err error) {
 	}
 }
 
-func (crud *CRUD[T]) all(context *gin.Context) {
+func (crud *Crud[T]) all(context *gin.Context) {
 	db := crud.database.Model(crud.makeOne())
 	db = crud.handleSearches(context, db)
 
@@ -127,6 +129,21 @@ func (crud *CRUD[T]) all(context *gin.Context) {
 		return
 	}
 
+	if crud.GetCensor != nil {
+		censor, err := crud.GetCensor(context, crud.database)
+		if err != nil {
+			crud.error(context, crud.Coder.InternalServerError(), err)
+			return
+		}
+		for i := 0; i < len(list); i++ {
+			err = censor.Decensor(&list[i])
+			if err != nil {
+				crud.error(context, crud.Coder.InternalServerError(), err)
+				return
+			}
+		}
+	}
+
 	if crud.DidGetAll != nil {
 		if crud.DidGetAll(list, context, crud.database); context.IsAborted() {
 			return
@@ -136,7 +153,7 @@ func (crud *CRUD[T]) all(context *gin.Context) {
 	crud.ok(context, list)
 }
 
-func (crud *CRUD[T]) one(context *gin.Context) {
+func (crud *Crud[T]) one(context *gin.Context) {
 	var result T
 
 	id := context.Param("id")
@@ -157,6 +174,19 @@ func (crud *CRUD[T]) one(context *gin.Context) {
 		return
 	}
 
+	if crud.GetCensor != nil {
+		censor, err := crud.GetCensor(context, crud.database)
+		if err != nil {
+			crud.error(context, crud.Coder.InternalServerError(), err)
+			return
+		}
+		err = censor.Decensor(&result)
+		if err != nil {
+			crud.error(context, crud.Coder.InternalServerError(), err)
+			return
+		}
+	}
+
 	if crud.DidGetOne != nil {
 		if crud.DidGetOne(&result, context, crud.database); context.IsAborted() {
 			return
@@ -166,7 +196,7 @@ func (crud *CRUD[T]) one(context *gin.Context) {
 	crud.ok(context, result)
 }
 
-func (crud *CRUD[T]) page(context *gin.Context) {
+func (crud *Crud[T]) page(context *gin.Context) {
 	pageNum, err := strconv.ParseInt(context.Param("pageNum"), 10, 64)
 	if err != nil {
 		crud.error(context, crud.Coder.BadRequest(), err)
@@ -204,6 +234,21 @@ func (crud *CRUD[T]) page(context *gin.Context) {
 		return
 	}
 
+	if crud.GetCensor != nil {
+		censor, err := crud.GetCensor(context, crud.database)
+		if err != nil {
+			crud.error(context, crud.Coder.InternalServerError(), err)
+			return
+		}
+		for i := 0; i < len(list); i++ {
+			err = censor.Decensor(&list[i])
+			if err != nil {
+				crud.error(context, crud.Coder.InternalServerError(), err)
+				return
+			}
+		}
+	}
+
 	if crud.DidPage != nil {
 		if crud.DidPage(pageNum, pageSize, list, context, db); context.IsAborted() {
 			return
@@ -213,7 +258,7 @@ func (crud *CRUD[T]) page(context *gin.Context) {
 	crud.ok(context, list)
 }
 
-func (crud *CRUD[T]) count(context *gin.Context) {
+func (crud *Crud[T]) count(context *gin.Context) {
 	db := crud.database.Model(crud.makeOne())
 	db = crud.handleSearches(context, db)
 
@@ -239,7 +284,7 @@ func (crud *CRUD[T]) count(context *gin.Context) {
 	crud.ok(context, count)
 }
 
-func (crud *CRUD[T]) save(context *gin.Context) {
+func (crud *Crud[T]) save(context *gin.Context) {
 	record := crud.makeOne()
 	err := context.ShouldBindJSON(record)
 	if err != nil {
@@ -249,6 +294,19 @@ func (crud *CRUD[T]) save(context *gin.Context) {
 
 	if crud.WillSave != nil {
 		if crud.WillSave(record, context, crud.database); context.IsAborted() {
+			return
+		}
+	}
+
+	if crud.GetCensor != nil {
+		censor, err := crud.GetCensor(context, crud.database)
+		if err != nil {
+			crud.error(context, crud.Coder.InternalServerError(), err)
+			return
+		}
+		err = censor.Encencor(record)
+		if err != nil {
+			crud.error(context, crud.Coder.InternalServerError(), err)
 			return
 		}
 	}
@@ -272,7 +330,7 @@ func (crud *CRUD[T]) save(context *gin.Context) {
 	))
 }
 
-func (crud *CRUD[T]) delete(context *gin.Context) {
+func (crud *Crud[T]) delete(context *gin.Context) {
 	deleted := false
 
 	if crud.WillDelete != nil {
@@ -294,7 +352,7 @@ func (crud *CRUD[T]) delete(context *gin.Context) {
 	crud.ok(context, deleted)
 }
 
-func New[T any](group *gin.RouterGroup, database *gorm.DB, crud CRUD[T]) error {
+func New[T any](group *gin.RouterGroup, database *gorm.DB, crud Crud[T]) error {
 	if group == nil {
 		return NilGroupError
 	}
