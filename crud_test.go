@@ -69,6 +69,16 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 		t.Fatal(err)
 	}
 
+	err = New(nil, db, Crud[User]{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	err = New(engine.Group("/user"), nil, Crud[User]{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
 	err = New(engine.Group("/user"), db, Crud[User]{
 		EnableGetAll: true,
 		SearchHandlers: SearchHandlers{
@@ -104,8 +114,8 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 
 	err = New(engine.Group("/vip-user"), db, Crud[SecretUser]{
 		EnableGetAll: true,
-		GetCensor: func(_ *gin.Context, _ *gorm.DB) (*censored.Censor, error) {
-			return censor, nil
+		GetCensors: func(_ *gin.Context, _ *gorm.DB) ([]*censored.Censor, error) {
+			return []*censored.Censor{censor}, nil
 		},
 	})
 	if err != nil {
@@ -254,6 +264,16 @@ func TestDefault(t *testing.T) {
 		t.Fatal("length is not 1")
 	} else if page[0].Name != "test1" {
 		t.Fatal("the first name is not test1")
+	}
+
+	// test zero page
+	page, err = crudy.Page(0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if page == nil {
+		t.Fatal("response is nil")
+	} else if len(page) == 0 {
+		t.Fatal("length should not be 0")
 	}
 
 	// test update

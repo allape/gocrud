@@ -66,10 +66,42 @@ type Crud[T any] struct {
 	Coder             Coder
 	MakeOkResponse    func(context *gin.Context, data any)
 	MakeErrorResponse func(context *gin.Context, code Code, err error)
-	GetCensor         func(context *gin.Context, db *gorm.DB) (*censored.Censor, error)
+
+	GetCensors func(context *gin.Context, db *gorm.DB) ([]*censored.Censor, error)
 
 	group    *gin.RouterGroup
 	database *gorm.DB
+}
+
+func (crud *Crud[T]) Encensor(context *gin.Context, db *gorm.DB, record *T) error {
+	return crud.Docensor(context, db, record, true)
+}
+
+func (crud *Crud[T]) Decensor(context *gin.Context, db *gorm.DB, record *T) error {
+	return crud.Docensor(context, db, record, false)
+}
+
+func (crud *Crud[T]) Docensor(context *gin.Context, db *gorm.DB, record *T, encensor bool) error {
+	censors, err := crud.GetCensors(context, db)
+	if err != nil {
+		return err
+	}
+	if encensor {
+		for i := 0; i < len(censors); i++ {
+			err = censors[i].Encencor(record)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		for i := 0; i < len(censors); i++ {
+			err = censors[i].Decensor(record)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (crud *Crud[T]) makeOne() *T {
@@ -129,18 +161,11 @@ func (crud *Crud[T]) all(context *gin.Context) {
 		return
 	}
 
-	if crud.GetCensor != nil {
-		censor, err := crud.GetCensor(context, crud.database)
+	for i := 0; i < len(list); i++ {
+		err = crud.Decensor(context, db, &list[i])
 		if err != nil {
 			crud.error(context, crud.Coder.InternalServerError(), err)
 			return
-		}
-		for i := 0; i < len(list); i++ {
-			err = censor.Decensor(&list[i])
-			if err != nil {
-				crud.error(context, crud.Coder.InternalServerError(), err)
-				return
-			}
 		}
 	}
 
@@ -168,23 +193,18 @@ func (crud *Crud[T]) one(context *gin.Context) {
 		}
 	}
 
-	err := crud.database.Model(crud.makeOne()).First(&result, id).Error
+	db := crud.database.Model(crud.makeOne())
+
+	err := db.First(&result, id).Error
 	if err != nil {
 		crud.error(context, crud.Coder.NotFound(), err)
 		return
 	}
 
-	if crud.GetCensor != nil {
-		censor, err := crud.GetCensor(context, crud.database)
-		if err != nil {
-			crud.error(context, crud.Coder.InternalServerError(), err)
-			return
-		}
-		err = censor.Decensor(&result)
-		if err != nil {
-			crud.error(context, crud.Coder.InternalServerError(), err)
-			return
-		}
+	err = crud.Decensor(context, db, &result)
+	if err != nil {
+		crud.error(context, crud.Coder.InternalServerError(), err)
+		return
 	}
 
 	if crud.DidGetOne != nil {
@@ -234,18 +254,11 @@ func (crud *Crud[T]) page(context *gin.Context) {
 		return
 	}
 
-	if crud.GetCensor != nil {
-		censor, err := crud.GetCensor(context, crud.database)
+	for i := 0; i < len(list); i++ {
+		err = crud.Decensor(context, db, &list[i])
 		if err != nil {
 			crud.error(context, crud.Coder.InternalServerError(), err)
 			return
-		}
-		for i := 0; i < len(list); i++ {
-			err = censor.Decensor(&list[i])
-			if err != nil {
-				crud.error(context, crud.Coder.InternalServerError(), err)
-				return
-			}
 		}
 	}
 
@@ -298,17 +311,10 @@ func (crud *Crud[T]) save(context *gin.Context) {
 		}
 	}
 
-	if crud.GetCensor != nil {
-		censor, err := crud.GetCensor(context, crud.database)
-		if err != nil {
-			crud.error(context, crud.Coder.InternalServerError(), err)
-			return
-		}
-		err = censor.Encencor(record)
-		if err != nil {
-			crud.error(context, crud.Coder.InternalServerError(), err)
-			return
-		}
+	err = crud.Encensor(context, crud.database, record)
+	if err != nil {
+		crud.error(context, crud.Coder.InternalServerError(), err)
+		return
 	}
 
 	res := crud.database.Save(record)
@@ -365,6 +371,12 @@ func New[T any](group *gin.RouterGroup, database *gorm.DB, crud Crud[T]) error {
 
 	if crud.Coder == nil {
 		crud.Coder = RestCoder
+	}
+
+	if crud.GetCensors == nil {
+		crud.GetCensors = func(context *gin.Context, db *gorm.DB) ([]*censored.Censor, error) {
+			return nil, nil
+		}
 	}
 
 	crud.DefaultPageSize = Ternary(
