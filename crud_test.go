@@ -88,7 +88,7 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 				t.Log("id filter:", value)
 				return value
 			}),
-			"in_id":           KeywordIDIn("id", nil),
+			"in_id":           KeywordIDIn("id", OverflowedArrayTrimmerFilter[ID](1000)),
 			"field_not_found": KeywordLike("field_not_found", nil),
 			"name":            KeywordLike("name", nil),
 			"name_eq":         KeywordEqual("name", nil),

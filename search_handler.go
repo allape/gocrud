@@ -130,8 +130,8 @@ func OverflowedArrayTrimmer[T any](array []T, max int) []T {
 	return array
 }
 
-func OverflowedArrayTrimmerFilter(max int) func([]string) []string {
-	return func(value []string) []string {
+func OverflowedArrayTrimmerFilter[T any](max int) func([]T) []T {
+	return func(value []T) []T {
 		return OverflowedArrayTrimmer(value, max)
 	}
 }
