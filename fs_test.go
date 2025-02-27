@@ -77,10 +77,10 @@ func TestStaticServ(t *testing.T) {
 	}
 
 	err = NewHttpFileSystem(group4, TestData, &HttpFileSystemConfig{
-		AllowUpload:        true,
-		AllowOverwrite:     true,
-		EnableServerDigest: true,
-		Coder:              coder,
+		AllowUpload:    true,
+		AllowOverwrite: true,
+		EnableDigest:   true,
+		Coder:          coder,
 	})
 	if err != nil {
 		t.Fatal(err)

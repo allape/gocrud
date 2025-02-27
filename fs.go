@@ -25,22 +25,27 @@ var (
 )
 
 type HttpFileSystemConfig struct {
-	AllowUpload        bool
-	AllowOverwrite     bool
-	EnableServerDigest bool // EnableServerDigest: if true, will save file with its digest, and discard client defined filename
-	Coder              Coder
+	AllowUpload    bool
+	AllowOverwrite bool
+	EnableDigest   bool // EnableDigest: if true, will save file with its digest, and discard client defined filename
+	Coder          Coder
 }
+
+type (
+	Filename   string
+	FileDigest string
+)
 
 func SaveAsDigestedFile(
 	folder string, // base folder
 	filename string, // for extracting file extension
 	reader io.Reader, // file content
 	length int64, // leave it 0 to skip length check
-	validigest string, // validation digest, leave it empty to skip validation
-) (string, error) {
+	validigest FileDigest, // validation digest, leave it empty to skip validation
+) (Filename, FileDigest, error) {
 	tmpFile, err := os.CreateTemp(os.TempDir(), "gocrud-static-*.bin")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer func() {
 		_ = tmpFile.Close()
@@ -53,14 +58,14 @@ func SaveAsDigestedFile(
 
 	n, err := io.Copy(mw, reader)
 	if err != nil {
-		return "", err
+		return "", "", err
 	} else if length > 0 && n != length {
-		return "", ErrorIncompleteWrite
+		return "", "", ErrorIncompleteWrite
 	}
 
 	digest := hex.EncodeToString(hasher.Sum(nil))
-	if validigest != "" && strings.ToLower(validigest) != digest {
-		return "", ErrorFileDigestMismatch
+	if validigest != "" && strings.ToLower(string(validigest)) != digest {
+		return "", "", ErrorFileDigestMismatch
 	}
 
 	filename = path.Join(
@@ -76,10 +81,10 @@ func SaveAsDigestedFile(
 	if err != nil {
 		if !os.IsNotExist(err) {
 			//return "", ErrorFileExists
-			return filename, nil
+			return Filename(filename), "", nil
 		}
 	} else if stat.IsDir() {
-		return "", ErrorFileIsDir
+		return "", "", ErrorFileIsDir
 	}
 
 	basepath := path.Dir(fullpath)
@@ -88,16 +93,16 @@ func SaveAsDigestedFile(
 		if os.IsNotExist(err) {
 			err = os.MkdirAll(basepath, os.ModePerm)
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
 		} else {
-			return "", err
+			return "", "", err
 		}
 	}
 
 	file, err := os.Create(fullpath)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer func() {
 		_ = file.Close()
@@ -105,19 +110,19 @@ func SaveAsDigestedFile(
 
 	_, err = tmpFile.Seek(0, io.SeekStart)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	nn, err := io.Copy(file, tmpFile)
 	if err != nil {
 		_ = os.Remove(fullpath)
-		return "", err
+		return "", "", err
 	} else if n != nn {
 		_ = os.Remove(fullpath)
-		return "", ErrorIncompleteWrite
+		return "", "", ErrorIncompleteWrite
 	}
 
-	return filename, nil
+	return Filename(filename), FileDigest(digest), nil
 }
 
 func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSystemConfig) error {
@@ -139,18 +144,20 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 
 		var err error
 		var filename string
-		if config.EnableServerDigest {
-			filename, err = SaveAsDigestedFile(
+		if config.EnableDigest {
+			var saved Filename
+			saved, _, err = SaveAsDigestedFile(
 				folder,
 				context.Param("filepath"),
 				context.Request.Body,
 				context.Request.ContentLength,
-				context.GetHeader(XFileDigest),
+				FileDigest(context.GetHeader(XFileDigest)),
 			)
 			if err != nil {
 				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 				return
 			}
+			filename = string(saved)
 		} else {
 			filename = context.Param("filepath")
 			fullpath := path.Join(folder, filename)
