@@ -90,8 +90,13 @@ func NewSingleHTMLServe(group *gin.RouterGroup, indexHTMLFile string, config *Si
 	return nil
 }
 
-func NewCorsConfig() cors.Config {
+func DefaultCorsConfig() cors.Config {
 	config := cors.DefaultConfig()
 	config.AddAllowHeaders(XFileDigest)
+	config.AllowAllOrigins = true
 	return config
+}
+
+func NewCors() gin.HandlerFunc {
+	return cors.New(DefaultCorsConfig())
 }

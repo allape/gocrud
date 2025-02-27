@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	censored "github.com/allape/gocensored"
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -41,7 +40,7 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 	engine := gin.New()
 
 	engine.Use(RecoveryHandler(true))
-	engine.Use(cors.New(NewCorsConfig()))
+	engine.Use(NewCors())
 
 	_, err := os.Stat(TestDBName)
 	if err != nil {
