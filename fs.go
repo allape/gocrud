@@ -31,6 +31,95 @@ type HttpFileSystemConfig struct {
 	Coder              Coder
 }
 
+func SaveAsDigestedFile(
+	folder string, // base folder
+	filename string, // for extracting file extension
+	reader io.Reader, // file content
+	length int64, // leave it 0 to skip length check
+	validigest string, // validation digest, leave it empty to skip validation
+) (string, error) {
+	tmpFile, err := os.CreateTemp(os.TempDir(), "gocrud-static-*.bin")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+	}()
+
+	hasher := sha256.New()
+
+	mw := io.MultiWriter(tmpFile, hasher)
+
+	n, err := io.Copy(mw, reader)
+	if err != nil {
+		return "", err
+	} else if length > 0 && n != length {
+		return "", ErrorIncompleteWrite
+	}
+
+	digest := hex.EncodeToString(hasher.Sum(nil))
+	if validigest != "" && strings.ToLower(validigest) != digest {
+		return "", ErrorFileDigestMismatch
+	}
+
+	filename = path.Join(
+		"/",
+		digest[:2],
+		digest[2:4],
+		digest+path.Ext(filename),
+	)
+
+	fullpath := path.Join(folder, filename)
+
+	stat, err := os.Stat(fullpath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			//return "", ErrorFileExists
+			return filename, nil
+		}
+	} else if stat.IsDir() {
+		return "", ErrorFileIsDir
+	}
+
+	basepath := path.Dir(fullpath)
+
+	if _, err = os.Stat(basepath); err != nil {
+		if os.IsNotExist(err) {
+			err = os.MkdirAll(basepath, os.ModePerm)
+			if err != nil {
+				return "", err
+			}
+		} else {
+			return "", err
+		}
+	}
+
+	file, err := os.Create(fullpath)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	_, err = tmpFile.Seek(0, io.SeekStart)
+	if err != nil {
+		return "", err
+	}
+
+	nn, err := io.Copy(file, tmpFile)
+	if err != nil {
+		_ = os.Remove(fullpath)
+		return "", err
+	} else if n != nn {
+		_ = os.Remove(fullpath)
+		return "", ErrorIncompleteWrite
+	}
+
+	return filename, nil
+}
+
 func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSystemConfig) error {
 	if config == nil {
 		config = &HttpFileSystemConfig{Coder: RestCoder}
@@ -48,122 +137,87 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 			return
 		}
 
-		var reader io.Reader
-		var relativeFileName string
+		var err error
+		var filename string
 		if config.EnableServerDigest {
-			tmpFile, err := os.CreateTemp(os.TempDir(), "gocrud-static-*.bin")
+			filename, err = SaveAsDigestedFile(
+				folder,
+				context.Param("filepath"),
+				context.Request.Body,
+				context.Request.ContentLength,
+				context.GetHeader(XFileDigest),
+			)
+			if err != nil {
+				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
+				return
+			}
+		} else {
+			filename = context.Param("filepath")
+			fullpath := path.Join(folder, filename)
+			basepath := path.Dir(fullpath)
+
+			stat, err := os.Stat(fullpath)
+			if err == nil {
+				if !config.AllowOverwrite {
+					//MakeErrorResponse(context, config.Coder.Conflict(), ErrorFileExists)
+					context.JSON(http.StatusOK, R[any]{
+						Code:    config.Coder.Conflict(),
+						Message: ErrorFileExists.Error(),
+						Data:    filename,
+					})
+					return
+				}
+				if stat.IsDir() {
+					MakeErrorResponse(context, config.Coder.InternalServerError(), ErrorFileIsDir)
+					return
+				}
+			} else {
+				if !os.IsNotExist(err) {
+					MakeErrorResponse(context, config.Coder.InternalServerError(), err)
+					return
+				}
+			}
+
+			if _, err := os.Stat(basepath); err != nil {
+				if os.IsNotExist(err) {
+					err = os.MkdirAll(basepath, os.ModePerm)
+					if err != nil {
+						MakeErrorResponse(context, config.Coder.InternalServerError(), err)
+						return
+					}
+				} else {
+					MakeErrorResponse(context, config.Coder.InternalServerError(), err)
+					return
+				}
+			}
+
+			file, err := os.Create(fullpath)
 			if err != nil {
 				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 				return
 			}
 			defer func() {
-				_ = tmpFile.Close()
-				_ = os.Remove(tmpFile.Name())
+				_ = file.Close()
 			}()
 
-			hasher := sha256.New()
-
-			mw := io.MultiWriter(tmpFile, hasher)
-
-			n, err := io.Copy(mw, context.Request.Body)
+			n, err := io.Copy(file, context.Request.Body)
 			if err != nil {
+				_ = os.Remove(fullpath)
 				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 				return
-			} else if context.Request.ContentLength > 0 && n != context.Request.ContentLength {
+			}
+
+			contextLength := context.Request.ContentLength
+			if contextLength > 0 && n != contextLength {
+				_ = os.Remove(fullpath)
 				MakeErrorResponse(context, config.Coder.InternalServerError(), ErrorIncompleteWrite)
 				return
 			}
-
-			digest := hex.EncodeToString(hasher.Sum(nil))
-
-			digestFromClient := context.GetHeader(XFileDigest)
-			if digestFromClient != "" && strings.ToLower(digestFromClient) != digest {
-				MakeErrorResponse(context, config.Coder.BadRequest(), ErrorFileDigestMismatch)
-				return
-			}
-
-			_, err = tmpFile.Seek(0, io.SeekStart)
-			if err != nil {
-				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
-				return
-			}
-
-			reader = tmpFile
-			relativeFileName = path.Join(
-				"/",
-				digest[:2],
-				digest[2:4],
-				digest+path.Ext(context.Param("filepath")),
-			)
-		} else {
-			relativeFileName = context.Param("filepath")
-			reader = context.Request.Body
-		}
-
-		fullFileName := path.Join(folder, relativeFileName)
-		baseFolder := path.Dir(fullFileName)
-
-		stat, err := os.Stat(fullFileName)
-		if err == nil {
-			if !config.AllowOverwrite {
-				//MakeErrorResponse(context, config.Coder.Conflict(), ErrorFileExists)
-				context.JSON(http.StatusOK, R[any]{
-					Code:    config.Coder.OK(),
-					Message: ErrorFileExists.Error(),
-					Data:    relativeFileName,
-				})
-				return
-			}
-			if stat.IsDir() {
-				MakeErrorResponse(context, config.Coder.InternalServerError(), ErrorFileIsDir)
-				return
-			}
-		} else {
-			if !os.IsNotExist(err) {
-				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
-				return
-			}
-		}
-
-		if _, err := os.Stat(baseFolder); err != nil {
-			if os.IsNotExist(err) {
-				err = os.MkdirAll(baseFolder, os.ModePerm)
-				if err != nil {
-					MakeErrorResponse(context, config.Coder.InternalServerError(), err)
-					return
-				}
-			} else {
-				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
-				return
-			}
-		}
-
-		file, err := os.Create(fullFileName)
-		if err != nil {
-			MakeErrorResponse(context, config.Coder.InternalServerError(), err)
-			return
-		}
-		defer func() {
-			_ = file.Close()
-		}()
-
-		n, err := io.Copy(file, reader)
-		if err != nil {
-			_ = os.Remove(fullFileName)
-			MakeErrorResponse(context, config.Coder.InternalServerError(), err)
-			return
-		}
-
-		contextLength := context.Request.ContentLength
-		if contextLength > 0 && n != contextLength {
-			_ = os.Remove(fullFileName)
-			MakeErrorResponse(context, config.Coder.InternalServerError(), ErrorIncompleteWrite)
-			return
 		}
 
 		context.JSON(http.StatusOK, R[any]{
 			Code: config.Coder.OK(),
-			Data: relativeFileName,
+			Data: filename,
 		})
 	})
 
