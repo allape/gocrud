@@ -150,7 +150,7 @@ func TestStaticServ(t *testing.T) {
 	digest := hex.EncodeToString(hash[:])
 
 	result, err = fetchJSON[any](http.MethodPost, url, bytes.NewReader(randomBytes), map[string]string{
-		"X-File-Digest": digest + "123",
+		XFileDigest: digest + "123",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +161,7 @@ func TestStaticServ(t *testing.T) {
 	}
 
 	result, err = fetchJSON[any](http.MethodPost, url, bytes.NewReader(randomBytes), map[string]string{
-		"X-File-Digest": digest,
+		XFileDigest: digest,
 	})
 	if err != nil {
 		t.Fatal(err)

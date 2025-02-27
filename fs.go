@@ -12,6 +12,10 @@ import (
 	"strings"
 )
 
+const (
+	XFileDigest = "X-File-Digest"
+)
+
 var (
 	ErrorIncompleteWrite    = errors.New("incomplete write")
 	ErrorFileExists         = errors.New("file already exists")
@@ -72,7 +76,7 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 
 			digest := hex.EncodeToString(hasher.Sum(nil))
 
-			digestFromClient := context.GetHeader("X-File-Digest")
+			digestFromClient := context.GetHeader(XFileDigest)
 			if digestFromClient != "" && strings.ToLower(digestFromClient) != digest {
 				MakeErrorResponse(context, config.Coder.BadRequest(), ErrorFileDigestMismatch)
 				return

@@ -2,6 +2,7 @@ package gocrud
 
 import (
 	"fmt"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"io"
 	"net/http"
@@ -87,4 +88,10 @@ func NewSingleHTMLServe(group *gin.RouterGroup, indexHTMLFile string, config *Si
 	group.PUT("/index.html", putHandler)
 
 	return nil
+}
+
+func NewCorsConfig() cors.Config {
+	config := cors.DefaultConfig()
+	config.AddAllowHeaders(XFileDigest)
+	return config
 }
