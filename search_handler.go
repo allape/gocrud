@@ -9,6 +9,11 @@ import (
 )
 
 type (
+	SearchHandler  = func(db *gorm.DB, values []string, with url.Values) *gorm.DB
+	SearchHandlers = map[string]SearchHandler
+)
+
+type (
 	Operator                       string
 	ValueTransformer[T any, R any] func(value T) R
 )
@@ -40,6 +45,14 @@ func KeywordStatement(name string, operator Operator, vt ValueTransformer[string
 					return db
 				}
 			}
+
+			// cheat
+			if operator == OperatorIn || operator == OperatorNotIn {
+				if arr, ok := anyValue.([]any); ok && len(arr) == 0 {
+					return db.Where("1 != 1")
+				}
+			}
+
 			db = db.Where(
 				fmt.Sprintf("`%s` %s ?", name, operator),
 				anyValue,
@@ -59,6 +72,19 @@ func KeywordIn(name string, vt ValueTransformer[[]string, []string]) SearchHandl
 			}
 		}
 		return array
+	})
+}
+
+func KeywordIDIn(name string, vt ValueTransformer[[]ID, []ID]) SearchHandler {
+	return KeywordStatement(name, OperatorIn, func(value string) any {
+		ids := IDsFromCommaSplitString(value)
+		if vt != nil {
+			ids = vt(ids)
+			if len(ids) == 0 {
+				return nil
+			}
+		}
+		return ids
 	})
 }
 
@@ -95,4 +121,17 @@ func NumericValidate(value string) any {
 		return nil
 	}
 	return value
+}
+
+func OverflowedArrayTrimmer[T any](array []T, max int) []T {
+	if len(array) > max {
+		return array[:max]
+	}
+	return array
+}
+
+func OverflowedArrayTrimmerFilter(max int) func([]string) []string {
+	return func(value []string) []string {
+		return OverflowedArrayTrimmer(value, max)
+	}
 }

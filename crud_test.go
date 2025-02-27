@@ -87,6 +87,7 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 				t.Log("id filter:", value)
 				return value
 			}),
+			"in_id":           KeywordIDIn("id", nil),
 			"field_not_found": KeywordLike("field_not_found", nil),
 			"name":            KeywordLike("name", nil),
 			"name_eq":         KeywordEqual("name", nil),
@@ -208,7 +209,8 @@ func TestDefault(t *testing.T) {
 
 	// test get all
 	all, err := crudy.All(map[string]string{
-		"name": "test",
+		"name":  "test",
+		"in_id": "1,,,23,4,5,6,2,3,4,",
 	})
 	if err != nil {
 		t.Fatal(err)

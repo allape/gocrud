@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"testing"
 	"time"
 )
@@ -79,4 +80,21 @@ func fetchJSON[T any](method, url string, reader io.Reader, headers map[string]s
 	err = json.Unmarshal(bs, &result)
 
 	return &result, err
+}
+
+func TestPick(t *testing.T) {
+	arr := []int{1, 2, 3}
+	if Pick(arr, 0, 0) != 1 {
+		t.Fatal("Pick failed")
+	} else if Pick(arr, 3, 0) != 0 {
+		t.Fatal("Pick failed")
+	} else if Pick(arr, 4, 0) != 0 {
+		t.Fatal("Pick failed")
+	}
+}
+
+func TestNowString(t *testing.T) {
+	if ok, err := regexp.Match("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}.\\d{3}$", []byte(NowString(nil))); !ok || err != nil {
+		t.Fatal("NowString failed")
+	}
 }

@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/http"
-	"net/url"
 	"slices"
 	"strconv"
 )
@@ -19,11 +18,6 @@ var (
 var (
 	DefaultPageSizes = []int64{10, 20, 50, 100}
 	DefaultPageSize  = DefaultPageSizes[0]
-)
-
-type (
-	SearchHandler  = func(db *gorm.DB, values []string, with url.Values) *gorm.DB
-	SearchHandlers = map[string]SearchHandler
 )
 
 type Crud[T any] struct {
