@@ -6,7 +6,6 @@ import (
 	"gorm.io/gorm"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -72,21 +71,15 @@ func NewSoftDeleteSearchHandler(tableName string) SearchHandler {
 	}
 }
 
-func IDsFromCommaSplitString(css string) []ID {
+func IDsFromCommaSeparatedString(css string) []ID {
 	var ids []ID
-	for _, s := range strings.Split(css, ",") {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-
+	MapFuncOverCommaSeparatedString(func(s string) {
 		id, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
-			continue
+			return
 		}
-
 		ids = append(ids, ID(id))
-	}
+	}, css)
 	return ids
 }
 

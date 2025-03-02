@@ -77,7 +77,7 @@ func KeywordIn(name string, vt ValueTransformer[[]string, []string]) SearchHandl
 
 func KeywordIDIn(name string, vt ValueTransformer[[]ID, []ID]) SearchHandler {
 	return KeywordStatement(name, OperatorIn, func(value string) any {
-		ids := IDsFromCommaSplitString(value)
+		ids := IDsFromCommaSeparatedString(value)
 		if vt != nil {
 			ids = vt(ids)
 			if len(ids) == 0 {

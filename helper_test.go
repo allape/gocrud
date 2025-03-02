@@ -98,3 +98,23 @@ func TestNowString(t *testing.T) {
 		t.Fatal("NowString failed")
 	}
 }
+
+func TestStringArrayFromCommaSeparatedString(t *testing.T) {
+	arr := StringArrayFromCommaSeparatedString("a,b,c")
+	if len(arr) != 3 {
+		t.Fatalf("expected 3, got %d", len(arr))
+	}
+
+	arr = StringArrayFromCommaSeparatedString(",,,   , , , ,   \r\n\r\n\n\n\n\n     ,,,,\t\t\t\t\t1,   2,   3       ,a,,,")
+	if len(arr) != 4 {
+		t.Fatalf("expected 4, got %d", len(arr))
+	} else if arr[0] != "1" {
+		t.Fatalf("expected 1, got %s", arr[0])
+	} else if arr[1] != "2" {
+		t.Fatalf("expected 2, got %s", arr[1])
+	} else if arr[2] != "3" {
+		t.Fatalf("expected 3, got %s", arr[2])
+	} else if arr[3] != "a" {
+		t.Fatalf("expected a, got %s", arr[3])
+	}
+}

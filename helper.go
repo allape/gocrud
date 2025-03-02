@@ -3,6 +3,7 @@ package gocrud
 import (
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -79,4 +80,22 @@ func Pointer[T any](t T) *T {
 
 func NowString(pattern *string) string {
 	return time.Now().Format(ValuableString(pattern, "2006-01-02 15:04:05.000"))
+}
+
+func MapFuncOverCommaSeparatedString(mapFunc func(string), css string) {
+	for _, s := range strings.Split(css, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		mapFunc(s)
+	}
+}
+
+func StringArrayFromCommaSeparatedString(css string) []string {
+	var array []string
+	MapFuncOverCommaSeparatedString(func(s string) {
+		array = append(array, s)
+	}, css)
+	return array
 }
