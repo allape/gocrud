@@ -175,8 +175,8 @@ func (crud *Crud[T]) all(context *gin.Context) {
 func (crud *Crud[T]) one(context *gin.Context) {
 	var result T
 
-	id := context.Param("id")
-	if id == "" {
+	id := Pick(IDsFromCommaSeparatedString(context.Param("id")), 0, 0)
+	if id == 0 {
 		crud.error(context, crud.Coder.BadRequest(), errors.New("invalid ID"))
 		return
 	}
@@ -189,7 +189,7 @@ func (crud *Crud[T]) one(context *gin.Context) {
 
 	db := crud.database.Model(crud.makeOne())
 
-	err := db.First(&result, id).Error
+	err := db.Where("id = ?", id).First(&result).Error
 	if err != nil {
 		crud.error(context, crud.Coder.NotFound(), err)
 		return
