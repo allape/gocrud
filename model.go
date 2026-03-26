@@ -1,12 +1,15 @@
 package gocrud
 
 import (
+	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	"net/url"
+	"reflect"
 	"strconv"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type ID uint64
@@ -60,7 +63,7 @@ func NewSoftDeleteSearchHandler(tableName string) SearchHandler {
 	}
 
 	return func(db *gorm.DB, values []string, _ url.Values) *gorm.DB {
-		if ok, deleted := ValuableArray(values); ok {
+		if deleted, ok := PickFirstValuableString(values); ok {
 			if deleted == "false" {
 				db = db.Where(fmt.Sprintf("%s IS NULL", fieldName))
 			} else {
@@ -99,4 +102,61 @@ func ContainsByID[T IBase](array []T, id ID) bool {
 		}
 	}
 	return false
+}
+
+type DuplicateFieldCheckResult bool
+
+const (
+	Okay    DuplicateFieldCheckResult = true
+	NotOkay DuplicateFieldCheckResult = false
+)
+
+// DuplicateFieldCheck
+// T must extend from gocrud.Base which must contain id field
+func DuplicateFieldCheck[T any](db *gorm.DB, context *gin.Context, objectForCheck *T, objectFieldName, dbFieldName string) (DuplicateFieldCheckResult, error) {
+	record := reflect.ValueOf(objectForCheck).Elem()
+
+	valueField := record.FieldByName(objectFieldName)
+	idField := record.FieldByName("ID")
+
+	valueForCheck := record.FieldByName(objectFieldName).String()
+
+	if !valueField.IsValid() || valueForCheck == "" {
+		MakeErrorResponse(context, RestCoder.InternalServerError(), "record is invalid")
+		return NotOkay, fmt.Errorf("there is no valid value in field %s", objectFieldName)
+	}
+
+	id := uint64(0)
+	if idField.CanUint() {
+		id = idField.Uint()
+	}
+
+	if id > 0 {
+		var old T
+		if err := db.Model(&old).Where("id = ?", id).First(&old).Error; err != nil {
+			MakeErrorResponse(context, RestCoder.NotFound(), "record not found")
+			return NotOkay, fmt.Errorf("unable to find old record for id [%d]", id)
+		}
+
+		oldValue := reflect.ValueOf(old).FieldByName(objectFieldName).String()
+
+		if oldValue == valueForCheck {
+			valueForCheck = ""
+		}
+	}
+
+	if valueForCheck != "" {
+		var m T
+		var count int64
+		if err := db.Model(&m).Where(fmt.Sprintf("`%s` = ?", dbFieldName), valueForCheck).Count(&count).Error; err != nil {
+			MakeErrorResponse(context, RestCoder.InternalServerError(), fmt.Sprintf("%s is invalid", objectFieldName))
+			return NotOkay, fmt.Errorf("%s [%s] duplication check failed: [%v]", objectFieldName, valueForCheck, err)
+		} else if count > 0 {
+			msg := fmt.Sprintf("%s [%s] has been taken", objectFieldName, valueForCheck)
+			MakeErrorResponse(context, RestCoder.BadRequest(), msg)
+			return NotOkay, errors.New(msg)
+		}
+	}
+
+	return Okay, nil
 }

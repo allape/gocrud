@@ -2,12 +2,12 @@ package gocrud
 
 import (
 	"errors"
+	"slices"
+	"strconv"
+
 	censored "github.com/allape/gocensored"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"net/http"
-	"slices"
-	"strconv"
 )
 
 var (
@@ -58,7 +58,7 @@ type Crud[T any] struct {
 	DidDelete  func(context *gin.Context, db *gorm.DB)
 
 	Coder             Coder
-	MakeOkResponse    func(context *gin.Context, data any)
+	MakeOkayResponse  func(context *gin.Context, data any)
 	MakeErrorResponse func(context *gin.Context, code Code, err error)
 
 	GetCensors func(context *gin.Context, db *gorm.DB) ([]*censored.Censor, error)
@@ -120,10 +120,10 @@ func (crud *Crud[T]) handleSearches(context *gin.Context, db *gorm.DB) *gorm.DB 
 }
 
 func (crud *Crud[T]) ok(context *gin.Context, data any) {
-	if crud.MakeOkResponse != nil {
-		crud.MakeOkResponse(context, data)
+	if crud.MakeOkayResponse != nil {
+		crud.MakeOkayResponse(context, data)
 	} else {
-		context.JSON(http.StatusOK, R[any]{
+		MakeOkayResponse(context, R[any]{
 			Code: crud.Coder.OK(),
 			Data: data,
 		})

@@ -5,13 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"io"
 	"math/rand"
 	"net/http"
 	"os"
 	"path"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 const (

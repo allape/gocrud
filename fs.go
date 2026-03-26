@@ -4,12 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"github.com/gin-gonic/gin"
 	"io"
 	"net/http"
 	"os"
 	"path"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
 const (

@@ -3,12 +3,13 @@ package gocrud
 import (
 	"bytes"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	mrand "math/rand"
 	"net/http"
 	"os"
 	"path"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestNewSingleHTMLServe(t *testing.T) {

@@ -3,16 +3,17 @@ package gocrud
 import (
 	"bytes"
 	"encoding/base64"
-	censored "github.com/allape/gocensored"
-	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 	"log"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	censored "github.com/allape/gocensored"
+	"github.com/gin-gonic/gin"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 const (

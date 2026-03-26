@@ -1,10 +1,11 @@
 package gocrud
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 var RestCoder = NewDefaultCoder()
@@ -36,6 +37,10 @@ func MakeErrorResponse(context *gin.Context, code Code, err any) {
 	})
 }
 
+func MakeOkayResponse[T any](context *gin.Context, r R[T]) {
+	context.JSON(http.StatusOK, r)
+}
+
 func RecoveryHandler(responseFullError bool) gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, err any) {
 		MakeErrorResponse(
@@ -53,6 +58,13 @@ func Ternary[T any](condition bool, onTrue T, onFalse T) T {
 	return onFalse
 }
 
+func TernaryFunc[T any](conditionFunc func() bool, onTrueFunc, onFalseFunc func() T) T {
+	if conditionFunc() {
+		return onTrueFunc()
+	}
+	return onFalseFunc()
+}
+
 func Pick[T any](arr []T, index int, defaultValue T) T {
 	if index < 0 || index >= len(arr) {
 		return defaultValue
@@ -67,11 +79,11 @@ func ValuableString(str *string, ifEmptyValue string) string {
 	return *str
 }
 
-func ValuableArray(array []string) (bool, string) {
+func PickFirstValuableString(array []string) (string, bool) {
 	if len(array) > 0 && array[0] != "" {
-		return true, array[0]
+		return array[0], true
 	}
-	return false, ""
+	return "", false
 }
 
 func Pointer[T any](t T) *T {

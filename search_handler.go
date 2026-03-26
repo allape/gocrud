@@ -2,10 +2,11 @@ package gocrud
 
 import (
 	"fmt"
-	"gorm.io/gorm"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 type (
@@ -37,7 +38,7 @@ const (
 
 func KeywordStatement(name string, operator Operator, vt ValueTransformer[string, any]) SearchHandler {
 	return func(db *gorm.DB, values []string, _ url.Values) *gorm.DB {
-		if ok, value := ValuableArray(values); ok {
+		if value, ok := PickFirstValuableString(values); ok {
 			var anyValue any = value
 			if vt != nil {
 				anyValue = vt(value)
@@ -104,7 +105,7 @@ func KeywordEqual(name string, vt ValueTransformer[string, any]) SearchHandler {
 
 func SortBy(name string) SearchHandler {
 	return func(db *gorm.DB, values []string, _ url.Values) *gorm.DB {
-		if ok, value := ValuableArray(values); ok {
+		if value, ok := PickFirstValuableString(values); ok {
 			sort := "asc"
 			if strings.ToLower(value) == "desc" {
 				sort = "desc"
