@@ -37,8 +37,16 @@ func MakeErrorResponse(context *gin.Context, code Code, err any) {
 	})
 }
 
-func MakeOkayResponse[T any](context *gin.Context, r R[T]) {
-	context.JSON(http.StatusOK, r)
+func MakeOkayResponse[T any](context *gin.Context, code Code, message string, data T) {
+	context.JSON(http.StatusOK, R[T]{
+		Code:    code,
+		Message: message,
+		Data:    data,
+	})
+}
+
+func MakeOkayDataResponse[T any](context *gin.Context, data T) {
+	MakeOkayResponse[T](context, RestCoder.OK(), "", data)
 }
 
 func RecoveryHandler(responseFullError bool) gin.HandlerFunc {

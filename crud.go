@@ -123,10 +123,7 @@ func (crud *Crud[T]) ok(context *gin.Context, data any) {
 	if crud.MakeOkayResponse != nil {
 		crud.MakeOkayResponse(context, data)
 	} else {
-		MakeOkayResponse(context, R[any]{
-			Code: crud.Coder.OK(),
-			Data: data,
-		})
+		MakeOkayDataResponse(context, data)
 	}
 }
 
