@@ -12,9 +12,9 @@ import (
 var RestCoder = NewDefaultCoder()
 
 type R[T any] struct {
-	Code    Code   `json:"c"`
-	Message string `json:"m"`
-	Data    T      `json:"d"`
+	Code    Code   `json:"c,omitempty"`
+	Message string `json:"m,omitempty"`
+	Data    T      `json:"d,omitempty"`
 }
 
 func MakeErrorResponse(context *gin.Context, code Code, err any) {
