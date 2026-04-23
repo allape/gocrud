@@ -118,3 +118,41 @@ func TestStringArrayFromCommaSeparatedString(t *testing.T) {
 		t.Fatalf("expected a, got %s", arr[3])
 	}
 }
+
+func TestTernaryFunc(t *testing.T) {
+	v := TernaryFunc(func() bool {
+		return false
+	}, func() int {
+		return 1
+	}, func() int {
+		return 2
+	})
+	if v != 2 {
+		t.Fatalf("expect 2, got %d", v)
+	}
+
+	v = TernaryFunc(func() bool {
+		return true
+	}, func() int {
+		return 1
+	}, func() int {
+		return 2
+	})
+	if v != 1 {
+		t.Fatalf("expect 1, got %d", v)
+	}
+}
+
+func TestRemoveDuplication(t *testing.T) {
+	a := []int{2, 3, 1, 2, 3, 3, 4, 5, 3, 4, 5, 1, 2, 3}
+	b := RemoveDuplication(a)
+	if len(b) != 5 {
+		t.Fatalf("expected 5, got %d", len(b))
+	}
+
+	a = []int{1, 3, 5, 7, 9, 11}
+	b = RemoveDuplication(a)
+	if len(b) != 6 {
+		t.Fatalf("expected 6, got %d", len(b))
+	}
+}

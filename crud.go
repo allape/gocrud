@@ -17,7 +17,7 @@ var (
 
 var (
 	DefaultPageSizes = []int64{10, 20, 50, 100}
-	DefaultPageSize  = DefaultPageSizes[0]
+	DefaultPageSize  = int64(50)
 )
 
 type Crud[T any] struct {
@@ -135,6 +135,17 @@ func (crud *Crud[T]) error(context *gin.Context, code Code, err error) {
 	}
 }
 
+func (crud *Crud[T]) decensorList(context *gin.Context, db *gorm.DB, list []T) error {
+	for i := 0; i < len(list); i++ {
+		err := crud.Decensor(context, db, &list[i])
+		if err != nil {
+
+			return err
+		}
+	}
+	return nil
+}
+
 func (crud *Crud[T]) all(context *gin.Context) {
 	db := crud.database.Model(crud.makeOne())
 	db = crud.handleSearches(context, db)
@@ -152,12 +163,10 @@ func (crud *Crud[T]) all(context *gin.Context) {
 		return
 	}
 
-	for i := 0; i < len(list); i++ {
-		err = crud.Decensor(context, db, &list[i])
-		if err != nil {
-			crud.error(context, crud.Coder.InternalServerError(), err)
-			return
-		}
+	err = crud.decensorList(context, db, list)
+	if err != nil {
+		crud.error(context, crud.Coder.InternalServerError(), err)
+		return
 	}
 
 	if crud.DidGetAll != nil {
@@ -237,20 +246,17 @@ func (crud *Crud[T]) page(context *gin.Context) {
 		}
 	}
 
-	db.Offset(int((pageNum - 1) * pageSize))
-	db.Limit(int(pageSize))
+	db = db.Offset(int((pageNum - 1) * pageSize)).Limit(int(pageSize))
 	err = db.Find(&list).Error
 	if err != nil {
 		crud.error(context, crud.Coder.InternalServerError(), err)
 		return
 	}
 
-	for i := 0; i < len(list); i++ {
-		err = crud.Decensor(context, db, &list[i])
-		if err != nil {
-			crud.error(context, crud.Coder.InternalServerError(), err)
-			return
-		}
+	err = crud.decensorList(context, db, list)
+	if err != nil {
+		crud.error(context, crud.Coder.InternalServerError(), err)
+		return
 	}
 
 	if crud.DidPage != nil {
@@ -311,6 +317,12 @@ func (crud *Crud[T]) save(context *gin.Context) {
 	res := crud.database.Save(record)
 	if res.Error != nil {
 		crud.error(context, crud.Coder.InternalServerError(), res.Error)
+		return
+	}
+
+	err = crud.Decensor(context, crud.database, record)
+	if err != nil {
+		crud.error(context, crud.Coder.InternalServerError(), err)
 		return
 	}
 

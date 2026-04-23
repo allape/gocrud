@@ -2,6 +2,7 @@ package gocrud
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -118,4 +119,15 @@ func StringArrayFromCommaSeparatedString(css string) []string {
 		array = append(array, s)
 	}, css)
 	return array
+}
+
+func RemoveDuplication[T ~[]E, E comparable](array T) T {
+	fresh := make(T, 0, len(array))
+	for _, v := range array {
+		if slices.Contains(fresh, v) {
+			continue
+		}
+		fresh = append(fresh, v)
+	}
+	return fresh
 }
