@@ -10,6 +10,7 @@ import (
 	"time"
 
 	censored "github.com/allape/gocensored"
+	"github.com/allape/gogger"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -21,18 +22,22 @@ const (
 )
 
 type User struct {
-	IBase `gorm:"-"`
 	Base
 	Name string `json:"name"`
 	Age  int    `json:"age"`
 }
 
-func (u User) GetID() ID {
-	return u.ID
+type Tag struct {
+	Base
+	Name string `json:"name"`
+}
+
+type UserTag struct {
+	UserID ID `json:"userId,omitempty"`
+	TagID  ID `json:"tagId"`
 }
 
 type SecretUser struct {
-	IBase `gorm:"-"`
 	Base
 	Name string `json:"name" censored:"aes.base64"`
 }
@@ -66,40 +71,50 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 		t.Fatal(err)
 	}
 
-	err = db.AutoMigrate(&User{}, &SecretUser{})
+	err = db.AutoMigrate(
+		&User{},
+		&SecretUser{},
+		&Tag{},
+		&UserTag{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = New(nil, db, Crud[User]{})
+	err = Setup(nil, db, nil, &Crud[User]{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
 
-	err = New(engine.Group("/user"), nil, Crud[User]{})
+	err = Setup(engine.Group("/user"), nil, nil, &Crud[User]{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
 
-	err = New(engine.Group("/user"), db, Crud[User]{
+	userLogger := gogger.New("controller:user")
+
+	err = Setup(engine.Group("/user"), db, nil, &Crud[User]{
 		EnableGetAll: true,
-		SearchHandlers: SearchHandlers{
-			"createdAt": SortBy("created_at"),
+		SearchHandlers: BaseSearchHandlers(SearchHandlers{
 			"id": KeywordIn("id", func(value []string) []string {
 				t.Log("id filter:", value)
 				return value
 			}),
-			"in_id":           KeywordIDIn("id", OverflowedArrayTrimmerFilter[ID](1000)),
 			"field_not_found": KeywordLike("field_not_found", nil),
 			"name":            KeywordLike("name", nil),
 			"name_eq":         KeywordEqual("name", nil),
-			"deleted":         NewSoftDeleteSearchHandler(""),
 			"age_gte":         KeywordStatement("age", OperatorGte, NumericValidate),
-		},
-		OnDelete: NewSoftDeleteHandler[User](RestCoder),
+		}),
 		WillSave: func(record *User, context *gin.Context, db *gorm.DB) {
 			if strings.Contains(record.Name, "freak") {
 				MakeErrorResponse(context, RestCoder.BadRequest(), "freak is not allowed")
+				return
+			}
+
+			if err := DuplicateFieldCheck[User](
+				db, context, userLogger, record,
+				"Name", "name",
+			); err != nil {
 				return
 			}
 		},
@@ -115,7 +130,7 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 		t.Fatal(err)
 	}
 
-	err = New(engine.Group("/vip-user"), db, Crud[SecretUser]{
+	err = Setup(engine.Group("/vip-user"), db, nil, &Crud[SecretUser]{
 		EnableGetAll: true,
 		GetCensors: func(_ *gin.Context, _ *gorm.DB) ([]*censored.Censor, error) {
 			return []*censored.Censor{censor}, nil
@@ -125,7 +140,25 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 		t.Fatal(err)
 	}
 
-	err = New(engine.Group("/vip-user-in-public"), db, Crud[SecretUser]{})
+	err = Setup(engine.Group("/vip-user-in-public"), db, nil, &Crud[SecretUser]{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = Setup(engine.Group("/hard-deletion-user"), db, nil, &Crud[User]{
+		OnDelete: NewHardDeleteHandler[User](RestCoder),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	userTagLogger := gogger.New("controller:usertag")
+
+	err = SetupDualPrimaryKeyModelController[UserTag](
+		engine.Group("/user-tag"), db, userTagLogger,
+		"UserID", "TagID",
+		"user_id", "tag_id",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,6 +368,28 @@ func TestDefault(t *testing.T) {
 		t.Fatal("response is nil")
 	} else if u1.DeletedAt == nil {
 		t.Fatal("expected deleted user")
+	}
+
+	// hard delete
+	hardDeleteCrudy, err := NewCrudy[User](
+		CrudyBasicOptions[User]{
+			BaseURL: AddrPrefix + "/hard-deletion-user",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err = hardDeleteCrudy.Delete(1)
+	if err != nil {
+		t.Fatal(err)
+	} else if !deleted {
+		t.Fatal("response is not true")
+	}
+
+	u1, err = crudy.One(1)
+	if err == nil {
+		t.Fatal("expected error")
 	}
 
 	// test vip

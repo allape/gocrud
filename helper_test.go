@@ -94,7 +94,7 @@ func TestPick(t *testing.T) {
 }
 
 func TestNowString(t *testing.T) {
-	if ok, err := regexp.Match("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}.\\d{3}$", []byte(NowString(nil))); !ok || err != nil {
+	if ok, err := regexp.Match("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}.\\d{3}$", []byte(NowString(""))); !ok || err != nil {
 		t.Fatal("NowString failed")
 	}
 }
@@ -154,5 +154,53 @@ func TestRemoveDuplication(t *testing.T) {
 	b = RemoveDuplication(a)
 	if len(b) != 6 {
 		t.Fatalf("expected 6, got %d", len(b))
+	}
+}
+
+func TestGetJSONFieldName(t *testing.T) {
+	userTag := UserTag{
+		UserID: 1,
+		TagID:  2,
+	}
+
+	userIdJsonFieldName := GetJSONFieldName(userTag, "UserID")
+	if userIdJsonFieldName != "userId" {
+		t.Fatalf("expect userId, got %s", userIdJsonFieldName)
+	}
+
+	tagIdJsonFieldName := GetJSONFieldName(userTag, "TagID")
+	if tagIdJsonFieldName != "tagId" {
+		t.Fatalf("expect tagId, got %s", tagIdJsonFieldName)
+	}
+}
+
+func TestIsNotEmptyArray(t *testing.T) {
+	if IsNotEmptyArray(1) {
+		t.Fatal("expect false, got true")
+	}
+
+	if IsNotEmptyArray("123") {
+		t.Fatal("expect false, got true")
+	}
+
+	a := 1
+	if IsNotEmptyArray(&a) {
+		t.Fatal("expect false, got true")
+	}
+
+	if IsNotEmptyArray([]int{}) {
+		t.Fatal("expect false, got true")
+	}
+
+	if IsNotEmptyArray([]string{}) {
+		t.Fatal("expect false, got true")
+	}
+
+	if IsNotEmptyArray([]byte{}) {
+		t.Fatal("expect false, got true")
+	}
+
+	if !IsNotEmptyArray([]int{1, 2, 3}) {
+		t.Fatal("expect true, got false")
 	}
 }

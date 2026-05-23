@@ -2,6 +2,7 @@ package gocrud
 
 import (
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -18,16 +19,23 @@ type R[T any] struct {
 }
 
 func MakeErrorResponse(context *gin.Context, code Code, err any) {
-	message := "Internal Server Error"
+	message := http.StatusText(http.StatusInternalServerError)
 
 	if err != nil {
 		switch err.(type) {
 		case string:
-			message = ValuableString(Pointer(err.(string)), message)
+			if err != "" {
+				message = err.(string)
+			}
 		case *string:
-			message = ValuableString(err.(*string), message)
+			if err == nil && len(*err.(*string)) > 0 {
+				message = *err.(*string)
+			}
 		case error:
-			message = ValuableString(Pointer(err.(error).Error()), message)
+			msg := err.(error).Error()
+			if msg != "" {
+				message = msg
+			}
 		}
 	}
 
@@ -81,13 +89,6 @@ func Pick[T any](arr []T, index int, defaultValue T) T {
 	return arr[index]
 }
 
-func ValuableString(str *string, ifEmptyValue string) string {
-	if str == nil || *str == "" {
-		return ifEmptyValue
-	}
-	return *str
-}
-
 func PickFirstValuableString(array []string) (string, bool) {
 	if len(array) > 0 && array[0] != "" {
 		return array[0], true
@@ -95,12 +96,8 @@ func PickFirstValuableString(array []string) (string, bool) {
 	return "", false
 }
 
-func Pointer[T any](t T) *T {
-	return &t
-}
-
-func NowString(pattern *string) string {
-	return time.Now().Format(ValuableString(pattern, "2006-01-02 15:04:05.000"))
+func NowString(pattern string) string {
+	return time.Now().Format(Ternary(pattern == "", "2006-01-02 15:04:05.000", pattern))
 }
 
 func MapFuncOverCommaSeparatedString(mapFunc func(string), css string) {
@@ -130,4 +127,40 @@ func RemoveDuplication[T ~[]E, E comparable](array T) T {
 		fresh = append(fresh, v)
 	}
 	return fresh
+}
+
+func GetJSONFieldName(record any, objectFieldName string) string {
+	t := reflect.TypeOf(record)
+
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	field, ok := t.FieldByName(objectFieldName)
+	if !ok {
+		return ""
+	}
+
+	jsonTag := field.Tag.Get("json")
+
+	frags := strings.Split(jsonTag, ",")
+	if len(frags) == 0 {
+		return ""
+	}
+
+	return strings.TrimSpace(frags[0])
+}
+
+func IsNotEmptyArray(v any) bool {
+	k := reflect.ValueOf(v)
+
+	if k.Kind() == reflect.Ptr {
+		k = k.Elem()
+	}
+
+	if k.Kind() != reflect.Array && k.Kind() != reflect.Slice {
+		return false
+	}
+
+	return k.Len() > 0
 }

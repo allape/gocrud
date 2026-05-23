@@ -2,10 +2,15 @@ package gocrud
 
 import (
 	"errors"
+	"fmt"
+	"net/http"
+	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 
-	censored "github.com/allape/gocensored"
+	"github.com/allape/gocensored"
+	"github.com/allape/gogger"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -21,9 +26,9 @@ var (
 )
 
 type Crud[T any] struct {
-	DisallowAnyPageSize bool
-	DefaultPageSize     int64
-	PageSizes           []int64
+	DisallowNonstandardPageSize bool
+	DefaultPageSize             int64
+	PageSizes                   []int64
 
 	SearchHandlers SearchHandlers
 
@@ -59,23 +64,26 @@ type Crud[T any] struct {
 
 	Coder             Coder
 	MakeOkayResponse  func(context *gin.Context, data any)
-	MakeErrorResponse func(context *gin.Context, code Code, err error)
+	MakeErrorResponse func(context *gin.Context, code Code, err any)
 
 	GetCensors func(context *gin.Context, db *gorm.DB) ([]*censored.Censor, error)
 
 	group    *gin.RouterGroup
 	database *gorm.DB
+	logger   *gogger.Logger
 }
 
-func (crud *Crud[T]) Encensor(context *gin.Context, db *gorm.DB, record *T) error {
-	return crud.Docensor(context, db, record, true)
+// region censors
+
+func (crud *Crud[T]) encensor(context *gin.Context, db *gorm.DB, record *T) error {
+	return crud.docensor(context, db, record, true)
 }
 
-func (crud *Crud[T]) Decensor(context *gin.Context, db *gorm.DB, record *T) error {
-	return crud.Docensor(context, db, record, false)
+func (crud *Crud[T]) decensor(context *gin.Context, db *gorm.DB, record *T) error {
+	return crud.docensor(context, db, record, false)
 }
 
-func (crud *Crud[T]) Docensor(context *gin.Context, db *gorm.DB, record *T, encensor bool) error {
+func (crud *Crud[T]) docensor(context *gin.Context, db *gorm.DB, record *T, encensor bool) error {
 	censors, err := crud.GetCensors(context, db)
 	if err != nil {
 		return err
@@ -98,6 +106,21 @@ func (crud *Crud[T]) Docensor(context *gin.Context, db *gorm.DB, record *T, ence
 	return nil
 }
 
+func (crud *Crud[T]) decensorList(context *gin.Context, db *gorm.DB, list []T) error {
+	for i := 0; i < len(list); i++ {
+		err := crud.decensor(context, db, &list[i])
+		if err != nil {
+
+			return err
+		}
+	}
+	return nil
+}
+
+// endregion
+
+// region helper
+
 func (crud *Crud[T]) makeOne() *T {
 	return new(T)
 }
@@ -106,17 +129,47 @@ func (crud *Crud[T]) makeArray() []T {
 	return make([]T, 0)
 }
 
-func (crud *Crud[T]) handleSearches(context *gin.Context, db *gorm.DB) *gorm.DB {
+func (crud *Crud[T]) handleSearches(context *gin.Context, db *gorm.DB) (*gorm.DB, error) {
 	if crud.SearchHandlers != nil {
+		var err error
+		var handledKey []string
+
+		if context.Request.Method == http.MethodPost {
+			var bodyPayload map[string]string
+			err = context.Bind(&bodyPayload)
+			if err != nil {
+				return nil, err
+			}
+
+			for key, value := range bodyPayload {
+				if handler, ok := crud.SearchHandlers[key]; ok {
+					db, err = handler(db, []string{value}, context)
+					if err != nil {
+						return nil, err
+					}
+					handledKey = append(handledKey, key)
+				}
+			}
+		}
+
 		query := context.Request.URL.Query()
 		for key, value := range query {
+			// body value has higher priority
+			if slices.Contains(handledKey, key) {
+				continue
+			}
+
 			if handler, ok := crud.SearchHandlers[key]; ok {
 				slices.Reverse(value)
-				db = handler(db, value, query)
+				db, err = handler(db, value, context)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
-	return db
+
+	return db, nil
 }
 
 func (crud *Crud[T]) ok(context *gin.Context, data any) {
@@ -127,7 +180,7 @@ func (crud *Crud[T]) ok(context *gin.Context, data any) {
 	}
 }
 
-func (crud *Crud[T]) error(context *gin.Context, code Code, err error) {
+func (crud *Crud[T]) error(context *gin.Context, code Code, err any) {
 	if crud.MakeErrorResponse != nil {
 		crud.MakeErrorResponse(context, code, err)
 	} else {
@@ -135,20 +188,19 @@ func (crud *Crud[T]) error(context *gin.Context, code Code, err error) {
 	}
 }
 
-func (crud *Crud[T]) decensorList(context *gin.Context, db *gorm.DB, list []T) error {
-	for i := 0; i < len(list); i++ {
-		err := crud.Decensor(context, db, &list[i])
-		if err != nil {
+// endregion
 
-			return err
-		}
-	}
-	return nil
-}
+// region primary functions
 
 func (crud *Crud[T]) all(context *gin.Context) {
 	db := crud.database.Model(crud.makeOne())
-	db = crud.handleSearches(context, db)
+
+	db, err := crud.handleSearches(context, db)
+	if err != nil {
+		crud.logger.Error().Printf("all: failed to handle searches: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] search failed")
+		return
+	}
 
 	if crud.WillGetAll != nil {
 		if db = crud.WillGetAll(context, db); context.IsAborted() {
@@ -157,15 +209,17 @@ func (crud *Crud[T]) all(context *gin.Context) {
 	}
 
 	list := crud.makeArray()
-	err := db.Find(&list).Error
+	err = db.Find(&list).Error
 	if err != nil {
-		crud.error(context, crud.Coder.InternalServerError(), err)
+		crud.logger.Error().Printf("all: failed to find records: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] database failed")
 		return
 	}
 
 	err = crud.decensorList(context, db, list)
 	if err != nil {
-		crud.error(context, crud.Coder.InternalServerError(), err)
+		crud.logger.Error().Printf("all: failed to decensor records: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] decensor failed]")
 		return
 	}
 
@@ -183,7 +237,7 @@ func (crud *Crud[T]) one(context *gin.Context) {
 
 	id := Pick(IDsFromCommaSeparatedString(context.Param("id")), 0, 0)
 	if id == 0 {
-		crud.error(context, crud.Coder.BadRequest(), errors.New("invalid ID"))
+		crud.error(context, crud.Coder.BadRequest(), "invalid id")
 		return
 	}
 
@@ -197,13 +251,15 @@ func (crud *Crud[T]) one(context *gin.Context) {
 
 	err := db.Where("id = ?", id).First(&result).Error
 	if err != nil {
-		crud.error(context, crud.Coder.NotFound(), err)
+		crud.logger.Error().Printf("one: failed to find record: %v", err)
+		crud.error(context, crud.Coder.NotFound(), "not found")
 		return
 	}
 
-	err = crud.Decensor(context, db, &result)
+	err = crud.decensor(context, db, &result)
 	if err != nil {
-		crud.error(context, crud.Coder.InternalServerError(), err)
+		crud.logger.Error().Printf("one: failed to decensor record: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] decensor failed")
 		return
 	}
 
@@ -219,26 +275,31 @@ func (crud *Crud[T]) one(context *gin.Context) {
 func (crud *Crud[T]) page(context *gin.Context) {
 	pageNum, err := strconv.ParseInt(context.Param("pageNum"), 10, 64)
 	if err != nil {
-		crud.error(context, crud.Coder.BadRequest(), err)
+		crud.error(context, crud.Coder.BadRequest(), "invalid page number")
 		return
 	}
 	pageSize, err := strconv.ParseInt(context.Param("pageSize"), 10, 64)
 	if err != nil {
-		crud.error(context, crud.Coder.BadRequest(), err)
+		crud.error(context, crud.Coder.BadRequest(), "invalid page size")
 		return
 	}
 
 	if pageNum <= 0 {
 		pageNum = 1
 	}
-	if pageSize <= 0 || (crud.DisallowAnyPageSize && !slices.Contains(crud.PageSizes, pageSize)) {
+	if pageSize <= 0 || (crud.DisallowNonstandardPageSize && !slices.Contains(crud.PageSizes, pageSize)) {
 		pageSize = crud.DefaultPageSize
 	}
 
 	list := crud.makeArray()
 	db := crud.database.Model(crud.makeOne())
 
-	db = crud.handleSearches(context, db)
+	db, err = crud.handleSearches(context, db)
+	if err != nil {
+		crud.logger.Error().Printf("page: failed to handle searches: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] search failed")
+		return
+	}
 
 	if crud.WillPage != nil {
 		if crud.WillPage(&pageNum, &pageSize, context, db); context.IsAborted() {
@@ -249,13 +310,15 @@ func (crud *Crud[T]) page(context *gin.Context) {
 	db = db.Offset(int((pageNum - 1) * pageSize)).Limit(int(pageSize))
 	err = db.Find(&list).Error
 	if err != nil {
-		crud.error(context, crud.Coder.InternalServerError(), err)
+		crud.logger.Error().Printf("page: failed to find records: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] database failed")
 		return
 	}
 
 	err = crud.decensorList(context, db, list)
 	if err != nil {
-		crud.error(context, crud.Coder.InternalServerError(), err)
+		crud.logger.Error().Printf("page: failed to decensor records: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] decensor failed")
 		return
 	}
 
@@ -270,7 +333,12 @@ func (crud *Crud[T]) page(context *gin.Context) {
 
 func (crud *Crud[T]) count(context *gin.Context) {
 	db := crud.database.Model(crud.makeOne())
-	db = crud.handleSearches(context, db)
+	db, err := crud.handleSearches(context, db)
+	if err != nil {
+		crud.logger.Error().Printf("count: failed to handle searches: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] search failed")
+		return
+	}
 
 	if crud.WillCount != nil {
 		if db = crud.WillCount(context, db); context.IsAborted() {
@@ -279,9 +347,10 @@ func (crud *Crud[T]) count(context *gin.Context) {
 	}
 
 	var count int64
-	err := db.Count(&count).Error
+	err = db.Count(&count).Error
 	if err != nil {
-		crud.error(context, crud.Coder.InternalServerError(), err)
+		crud.logger.Error().Printf("count: failed to count records: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] count failed")
 		return
 	}
 
@@ -298,7 +367,7 @@ func (crud *Crud[T]) save(context *gin.Context) {
 	record := crud.makeOne()
 	err := context.ShouldBindJSON(record)
 	if err != nil {
-		crud.error(context, crud.Coder.BadRequest(), err)
+		crud.error(context, crud.Coder.BadRequest(), "invalid body")
 		return
 	}
 
@@ -308,21 +377,24 @@ func (crud *Crud[T]) save(context *gin.Context) {
 		}
 	}
 
-	err = crud.Encensor(context, crud.database, record)
+	err = crud.encensor(context, crud.database, record)
 	if err != nil {
-		crud.error(context, crud.Coder.InternalServerError(), err)
+		crud.logger.Error().Printf("save: failed to encensor record: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] encensor failed")
 		return
 	}
 
 	res := crud.database.Save(record)
 	if res.Error != nil {
-		crud.error(context, crud.Coder.InternalServerError(), res.Error)
+		crud.logger.Error().Printf("save: failed to save record: %v", res.Error)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] save failed")
 		return
 	}
 
-	err = crud.Decensor(context, crud.database, record)
+	err = crud.decensor(context, crud.database, record)
 	if err != nil {
-		crud.error(context, crud.Coder.InternalServerError(), err)
+		crud.logger.Error().Printf("save: failed to decensor record: %v", err)
+		crud.error(context, crud.Coder.InternalServerError(), "[error] decensor failed")
 		return
 	}
 
@@ -332,11 +404,7 @@ func (crud *Crud[T]) save(context *gin.Context) {
 		}
 	}
 
-	crud.ok(context, Ternary[any](
-		res.RowsAffected > 0,
-		record,
-		false,
-	))
+	crud.ok(context, record)
 }
 
 func (crud *Crud[T]) delete(context *gin.Context) {
@@ -361,7 +429,14 @@ func (crud *Crud[T]) delete(context *gin.Context) {
 	crud.ok(context, deleted)
 }
 
-func New[T any](group *gin.RouterGroup, database *gorm.DB, crud Crud[T]) error {
+// endregion
+
+func Setup[T any](
+	group *gin.RouterGroup,
+	database *gorm.DB,
+	logger *gogger.Logger,
+	crud *Crud[T],
+) error {
 	if group == nil {
 		return NilGroupError
 	}
@@ -369,8 +444,18 @@ func New[T any](group *gin.RouterGroup, database *gorm.DB, crud Crud[T]) error {
 		return NilRepositoryError
 	}
 
+	if crud == nil {
+		crud = &Crud[T]{}
+	}
+
 	crud.group = group
 	crud.database = database
+	crud.logger = logger
+
+	if crud.logger == nil {
+		name := strings.ToLower(reflect.TypeOf(crud.makeOne()).Elem().Name())
+		crud.logger = gogger.New(fmt.Sprintf("crud:%s", name))
+	}
 
 	if crud.Coder == nil {
 		crud.Coder = RestCoder
@@ -394,15 +479,17 @@ func New[T any](group *gin.RouterGroup, database *gorm.DB, crud Crud[T]) error {
 	)
 
 	if crud.OnDelete == nil {
-		crud.OnDelete = NewHardDeleteHandler[T](crud.Coder)
+		crud.OnDelete = NewSoftDeleteHandler[T](crud.Coder)
 	}
 
 	if !crud.DisablePage {
 		crud.group.GET("/page/:pageNum/:pageSize", crud.page)
+		crud.group.POST("/page/:pageNum/:pageSize", crud.page)
 	}
 
 	if crud.EnableGetAll {
 		crud.group.GET("/all", crud.all)
+		crud.group.POST("/all", crud.all)
 	}
 
 	if !crud.DisableCount {

@@ -151,13 +151,18 @@ func (c *Crudy[T]) Page(current, size uint64, searchParams map[string]string) ([
 		size = c.defaultPageSize
 	}
 
-	u, err := c.BuildURL(fmt.Sprintf("/page/%d/%d", current, size), searchParams)
+	u, err := c.BuildURL(fmt.Sprintf("/page/%d/%d", current, size), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := json.Marshal(searchParams)
 	if err != nil {
 		return nil, err
 	}
 
 	var res R[[]T]
-	err = MakeJSONRequest(c, u, http.MethodGet, nil, &res)
+	err = MakeJSONRequest(c, u, http.MethodPost, bytes.NewReader(body), &res)
 	if err != nil {
 		return nil, err
 	}
@@ -166,13 +171,18 @@ func (c *Crudy[T]) Page(current, size uint64, searchParams map[string]string) ([
 }
 
 func (c *Crudy[T]) All(searchParams map[string]string) ([]T, error) {
-	u, err := c.BuildURL("/all", searchParams)
+	u, err := c.BuildURL("/all", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := json.Marshal(searchParams)
 	if err != nil {
 		return nil, err
 	}
 
 	var res R[[]T]
-	err = MakeJSONRequest(c, u, http.MethodGet, nil, &res)
+	err = MakeJSONRequest(c, u, http.MethodPost, bytes.NewReader(body), &res)
 	if err != nil {
 		return nil, err
 	}

@@ -2,21 +2,26 @@ package gocrud
 
 import (
 	"fmt"
-	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 type (
-	SearchHandler  = func(db *gorm.DB, values []string, with url.Values) *gorm.DB
+	SearchHandler  = func(db *gorm.DB, values []string, context *gin.Context) (*gorm.DB, error)
 	SearchHandlers = map[string]SearchHandler
 )
 
 type (
 	Operator                       string
 	ValueTransformer[T any, R any] func(value T) R
+)
+
+var (
+	NotArrayError = fmt.Errorf("not an array")
 )
 
 const (
@@ -36,35 +41,56 @@ const (
 	OperatorNeq        Operator = "!="
 )
 
-func KeywordStatement(name string, operator Operator, vt ValueTransformer[string, any]) SearchHandler {
-	return func(db *gorm.DB, values []string, _ url.Values) *gorm.DB {
+var Operators = []Operator{
+	OperatorEqual,
+	OperatorLike,
+	OperatorNotLike,
+	OperatorIn,
+	OperatorNotIn,
+	OperatorNull,
+	OperatorNNull,
+	OperatorBetween,
+	OperatorNotBetween,
+	OperatorGt,
+	OperatorGte,
+	OperatorLt,
+	OperatorLte,
+	OperatorNeq,
+}
+
+func KeywordStatement(field string, operator Operator, vt ValueTransformer[string, any]) SearchHandler {
+	if !slices.Contains(Operators, operator) {
+		panic(fmt.Sprintf("operator %s is not a valid operator", operator))
+	}
+
+	return func(db *gorm.DB, values []string, _ *gin.Context) (*gorm.DB, error) {
 		if value, ok := PickFirstValuableString(values); ok {
 			var anyValue any = value
 			if vt != nil {
 				anyValue = vt(value)
 				if anyValue == nil {
-					return db
+					return db, nil
 				}
 			}
 
-			// cheat
 			if operator == OperatorIn || operator == OperatorNotIn {
-				if arr, ok := anyValue.([]any); ok && len(arr) == 0 {
-					return db.Where("1 != 1")
+				if !IsNotEmptyArray(anyValue) {
+					return nil, NotArrayError
 				}
 			}
 
 			db = db.Where(
-				fmt.Sprintf("`%s` %s ?", name, operator),
+				fmt.Sprintf("`%s` %s ?", field, operator),
 				anyValue,
 			)
 		}
-		return db
+
+		return db, nil
 	}
 }
 
-func KeywordIn(name string, vt ValueTransformer[[]string, []string]) SearchHandler {
-	return KeywordStatement(name, OperatorIn, func(value string) any {
+func KeywordIn(field string, vt ValueTransformer[[]string, []string]) SearchHandler {
+	return KeywordStatement(field, OperatorIn, func(value string) any {
 		array := strings.Split(value, ",")
 		if vt != nil {
 			array = vt(array)
@@ -76,8 +102,8 @@ func KeywordIn(name string, vt ValueTransformer[[]string, []string]) SearchHandl
 	})
 }
 
-func KeywordIDIn(name string, vt ValueTransformer[[]ID, []ID]) SearchHandler {
-	return KeywordStatement(name, OperatorIn, func(value string) any {
+func KeywordIDIn(field string, vt ValueTransformer[[]ID, []ID]) SearchHandler {
+	return KeywordStatement(field, OperatorIn, func(value string) any {
 		ids := IDsFromCommaSeparatedString(value)
 		if vt != nil {
 			ids = vt(ids)
@@ -89,8 +115,8 @@ func KeywordIDIn(name string, vt ValueTransformer[[]ID, []ID]) SearchHandler {
 	})
 }
 
-func KeywordLike(name string, vt ValueTransformer[string, any]) SearchHandler {
-	return KeywordStatement(name, OperatorLike, func(value string) any {
+func KeywordLike(field string, vt ValueTransformer[string, any]) SearchHandler {
+	return KeywordStatement(field, OperatorLike, func(value string) any {
 		var anyValue any = value
 		if vt != nil {
 			anyValue = vt(value)
@@ -99,20 +125,20 @@ func KeywordLike(name string, vt ValueTransformer[string, any]) SearchHandler {
 	})
 }
 
-func KeywordEqual(name string, vt ValueTransformer[string, any]) SearchHandler {
-	return KeywordStatement(name, OperatorEqual, vt)
+func KeywordEqual(field string, vt ValueTransformer[string, any]) SearchHandler {
+	return KeywordStatement(field, OperatorEqual, vt)
 }
 
-func SortBy(name string) SearchHandler {
-	return func(db *gorm.DB, values []string, _ url.Values) *gorm.DB {
+func SortBy(field string) SearchHandler {
+	return func(db *gorm.DB, values []string, _ *gin.Context) (*gorm.DB, error) {
 		if value, ok := PickFirstValuableString(values); ok {
-			sort := "asc"
-			if strings.ToLower(value) == "desc" {
-				sort = "desc"
+			sort := "ASC"
+			if strings.TrimSpace(strings.ToLower(value)) == "desc" {
+				sort = "DESC"
 			}
-			db = db.Order(fmt.Sprintf("`%s` %s", name, sort))
+			db = db.Order(fmt.Sprintf("`%s` %s", field, sort))
 		}
-		return db
+		return db, nil
 	}
 }
 
