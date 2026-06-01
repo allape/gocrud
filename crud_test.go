@@ -101,6 +101,7 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 				return value
 			}),
 			"field_not_found": KeywordLike("field_not_found", nil),
+			"like_name":       KeywordLike("name", nil),
 			"name":            KeywordLike("name", nil),
 			"name_eq":         KeywordEqual("name", nil),
 			"age_gte":         KeywordStatement("age", OperatorGte, NumericValidate),
@@ -455,5 +456,10 @@ func _TestStartServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = router.Run(binding)
+
+	go func() {
+		_ = router.Run(binding)
+	}()
+
+	Wait4CtrlC()
 }

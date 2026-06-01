@@ -136,7 +136,7 @@ func (crud *Crud[T]) handleSearches(context *gin.Context, db *gorm.DB) (*gorm.DB
 
 		if context.Request.Method == http.MethodPost {
 			var bodyPayload map[string]string
-			err = context.Bind(&bodyPayload)
+			err = context.ShouldBind(&bodyPayload)
 			if err != nil {
 				return nil, err
 			}
