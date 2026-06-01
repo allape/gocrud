@@ -24,7 +24,7 @@ type CrudyBasicOptions[T any] struct {
 	CrudyOption[T]
 	BaseURL    string
 	HttpClient *http.Client
-	OkCodes    *[]int
+	OkCodes    []int
 }
 
 func (b CrudyBasicOptions[T]) Apply(crudy *Crudy[T]) error {
@@ -44,8 +44,10 @@ func (b CrudyPageOptions[T]) Apply(crudy *Crudy[T]) error {
 	return nil
 }
 
-func NewCrudy[T any](options ...CrudyOption[T]) (*Crudy[T], error) {
-	crudy := &Crudy[T]{}
+func NewCrudy[T any](baseURL string, options ...CrudyOption[T]) (*Crudy[T], error) {
+	crudy := &Crudy[T]{
+		baseURL: baseURL,
+	}
 
 	for _, option := range options {
 		err := option.Apply(crudy)
@@ -62,7 +64,7 @@ func NewCrudy[T any](options ...CrudyOption[T]) (*Crudy[T], error) {
 		crudy.httpClient = http.DefaultClient
 	}
 	if crudy.okCodes == nil {
-		crudy.okCodes = &DefaultOkCodes
+		crudy.okCodes = DefaultOkCodes
 	}
 
 	if crudy.defaultPageSize == 0 {
@@ -89,7 +91,7 @@ func MakeJSONRequest[T any, RR any](crudy *Crudy[T], u *url.URL, method string, 
 		_ = resp.Body.Close()
 	}()
 
-	if !slices.Contains(*crudy.okCodes, resp.StatusCode) {
+	if !slices.Contains(crudy.okCodes, resp.StatusCode) {
 		return fmt.Errorf("status code: %d", resp.StatusCode)
 	}
 
@@ -108,9 +110,9 @@ func MakeJSONRequest[T any, RR any](crudy *Crudy[T], u *url.URL, method string, 
 
 		if anyRes.Code != "0" {
 			return errors.New(anyRes.Message)
-		} else {
-			return errors.New("golang type of R is mismatched")
 		}
+
+		return errors.New("golang type of R is mismatched")
 	}
 
 	if res.Code != "0" {
@@ -123,7 +125,7 @@ func MakeJSONRequest[T any, RR any](crudy *Crudy[T], u *url.URL, method string, 
 type Crudy[T any] struct {
 	baseURL    string
 	httpClient *http.Client
-	okCodes    *[]int
+	okCodes    []int
 
 	defaultPageSize uint64
 }

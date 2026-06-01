@@ -60,7 +60,7 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 		}
 	}
 
-	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(TestDBName), &gorm.Config{
 		Logger: logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
 			SlowThreshold: 200 * time.Millisecond,
 			LogLevel:      logger.Info,
@@ -180,9 +180,7 @@ func TestDefault(t *testing.T) {
 	//goland:noinspection HttpUrlsUsage
 	var AddrPrefix = "http://" + binding
 
-	crudy, err := NewCrudy[User](CrudyBasicOptions[User]{
-		BaseURL: "I am an invalid URL, ^^^%%%$$$$",
-	})
+	crudy, err := NewCrudy[User]("I am an invalid URL, ^^^%%%$$$$")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,9 +190,7 @@ func TestDefault(t *testing.T) {
 	}
 
 	crudy, err = NewCrudy[User](
-		CrudyBasicOptions[User]{
-			BaseURL: AddrPrefix + "/user",
-		},
+		AddrPrefix+"/user",
 		CrudyPageOptions[User]{
 			DefaultSize: uint64(DefaultPageSize),
 		},
@@ -371,11 +367,7 @@ func TestDefault(t *testing.T) {
 	}
 
 	// hard delete
-	hardDeleteCrudy, err := NewCrudy[User](
-		CrudyBasicOptions[User]{
-			BaseURL: AddrPrefix + "/hard-deletion-user",
-		},
-	)
+	hardDeleteCrudy, err := NewCrudy[User](AddrPrefix + "/hard-deletion-user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,20 +385,12 @@ func TestDefault(t *testing.T) {
 	}
 
 	// test vip
-	vipCrudy, err := NewCrudy[SecretUser](
-		CrudyBasicOptions[SecretUser]{
-			BaseURL: AddrPrefix + "/vip-user",
-		},
-	)
+	vipCrudy, err := NewCrudy[SecretUser](AddrPrefix + "/vip-user")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	vipInPublicCrudy, err := NewCrudy[SecretUser](
-		CrudyBasicOptions[SecretUser]{
-			BaseURL: AddrPrefix + "/vip-user-in-public",
-		},
-	)
+	vipInPublicCrudy, err := NewCrudy[SecretUser](AddrPrefix + "/vip-user-in-public")
 	if err != nil {
 		t.Fatal(err)
 	}

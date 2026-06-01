@@ -2,4 +2,4 @@
 
 ### Example
 
-See [gocrud_test.go](gocrud_test.go)
+See [crud_test.go](crud_test.go)
