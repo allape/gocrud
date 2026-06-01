@@ -494,6 +494,7 @@ func Setup[T any](
 
 	if !crud.DisableCount {
 		crud.group.GET("/count", crud.count)
+		crud.group.POST("/count", crud.count)
 	}
 
 	if !crud.DisableGetOne {
