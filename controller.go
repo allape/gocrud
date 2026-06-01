@@ -50,30 +50,36 @@ func SetupDualPrimaryKeyModelController[T any](
 	inFieldName1 := "in_" + jsonFieldName1
 	inFieldName2 := "in_" + jsonFieldName2
 
-	err := Setup(group, db, logger, &Crud[T]{
-		DisableSave:   true,
-		DisableCount:  true,
-		DisableDelete: true,
-		DisableGetOne: true,
-		DisablePage:   true,
-		EnableGetAll:  true,
-		WillGetAll: func(context *gin.Context, db *gorm.DB) *gorm.DB {
-			f1 := IDsFromCommaSeparatedString(context.Query(inFieldName1))
-			f2 := IDsFromCommaSeparatedString(context.Query(inFieldName2))
-			if len(f1) == 0 && len(f2) == 0 {
-				MakeErrorResponse(context, RestCoder.BadRequest(), "ids cannot be empty")
-				return nil
-			}
-			return db
-		},
-		SearchHandlers: map[string]SearchHandler{
-			inFieldName1: KeywordIDIn(databaseFieldName1, nil),
-			inFieldName2: KeywordIDIn(databaseFieldName2, nil),
-		},
+	inField1WhereStatement := fmt.Sprintf("`%s` IN ?", databaseFieldName1)
+	inField2WhereStatement := fmt.Sprintf("`%s` IN ?", databaseFieldName2)
+
+	group.GET("/all", func(context *gin.Context) {
+		f1 := IDsFromCommaSeparatedString(context.Query(inFieldName1))
+		f2 := IDsFromCommaSeparatedString(context.Query(inFieldName2))
+		if len(f1) == 0 && len(f2) == 0 {
+			MakeErrorResponse(context, RestCoder.BadRequest(), "ids cannot be empty")
+			return
+		}
+
+		repo := db.Model(new(T))
+
+		if len(f1) > 0 {
+			repo = repo.Where(inField1WhereStatement, f1)
+		}
+
+		if len(f2) > 0 {
+			repo = repo.Where(inField2WhereStatement, f2)
+		}
+
+		var list []T
+		if err := repo.Find(&list).Error; err != nil {
+			logger.Error().Printf("failed to get list: %v", err)
+			MakeErrorResponse(context, RestCoder.InternalServerError(), "[error] failed to get list")
+			return
+		}
+
+		MakeOkayDataResponse(context, list)
 	})
-	if err != nil {
-		return err
-	}
 
 	// /save/[jsonField1 || jsonField2]?[jsonField1]=1,2,3...&[jsonField2]=1,2,3...
 	// delete by primaryFieldName before save
@@ -87,8 +93,8 @@ func SetupDualPrimaryKeyModelController[T any](
 		field1Ids := IDsFromCommaSeparatedString(c.Query(jsonFieldName1))
 		field2Ids := IDsFromCommaSeparatedString(c.Query(jsonFieldName2))
 
-		var pid ID
-		var sids []ID
+		var primaryId ID
+		var secondaryIds []ID
 
 		var objectPrimaryFieldName string
 		var objectSecondaryFieldName string
@@ -96,45 +102,45 @@ func SetupDualPrimaryKeyModelController[T any](
 
 		switch primaryFieldName {
 		case jsonFieldName1:
-			pid = Pick(field1Ids, 0, 0)
-			sids = field2Ids
+			primaryId = Pick(field1Ids, 0, 0)
+			secondaryIds = field2Ids
 			objectPrimaryFieldName = objectFieldName1
 			objectSecondaryFieldName = objectFieldName2
 			dbFieldName = databaseFieldName1
 		case jsonFieldName2:
-			pid = Pick(field2Ids, 0, 0)
-			sids = field1Ids
+			primaryId = Pick(field2Ids, 0, 0)
+			secondaryIds = field1Ids
 			objectPrimaryFieldName = objectFieldName2
 			objectSecondaryFieldName = objectFieldName1
 			dbFieldName = databaseFieldName2
 		}
 
-		if pid == 0 {
+		if primaryId == 0 {
 			MakeErrorResponse(c, RestCoder.BadRequest(), "pid cannot be empty")
 			return
 		}
 
-		sids = RemoveDuplication(sids)
+		secondaryIds = RemoveDuplication(secondaryIds)
 
 		count := int64(0)
 
 		err := db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Delete(new(T), dbFieldName+" = ?", pid).Error; err != nil {
+			if err := tx.Delete(new(T), fmt.Sprintf("`%s` = ?", dbFieldName), primaryId).Error; err != nil {
 				return err
 			}
 
-			if len(sids) == 0 {
+			if len(secondaryIds) == 0 {
 				return nil
 			}
 
-			items := make([]*T, len(sids))
-			for i, sid := range sids {
+			items := make([]*T, len(secondaryIds))
+			for i, sid := range secondaryIds {
 				record := new(T)
 
 				reflected := reflect.ValueOf(record).Elem()
 
 				primaryField := reflected.FieldByName(objectPrimaryFieldName)
-				primaryField.SetUint(uint64(pid))
+				primaryField.SetUint(uint64(primaryId))
 
 				secondaryField := reflected.FieldByName(objectSecondaryFieldName)
 				secondaryField.SetUint(uint64(sid))
@@ -152,7 +158,7 @@ func SetupDualPrimaryKeyModelController[T any](
 			return nil
 		})
 		if err != nil {
-			logger.Error().Printf("failed to save %v for %d: %v", sids, pid, err)
+			logger.Error().Printf("failed to save %v for %d: %v", secondaryIds, primaryId, err)
 			MakeErrorResponse(c, RestCoder.InternalServerError(), "[error] failed to save")
 			return
 		}
