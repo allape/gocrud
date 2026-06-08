@@ -1,16 +1,21 @@
 package gocrud
 
 import (
+	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"strconv"
 	"time"
 
+	"github.com/allape/gogger"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 type ID uint64
+
+var IDKind = reflect.Uint64
 
 type Base struct {
 	ID        ID         `json:"id"        gorm:"primaryKey"`
@@ -100,4 +105,60 @@ func IDsFromCommaSeparatedString(css string) []ID {
 		ids = append(ids, ID(id))
 	}, css)
 	return ids
+}
+
+// DuplicateFieldCheck
+// T must extend from Base which must contain id field
+func DuplicateFieldCheck[T any](
+	db *gorm.DB, context *gin.Context, logger *gogger.Logger,
+	objectForCheck *T, objectFieldName, dbFieldName string,
+) error {
+	record := reflect.ValueOf(objectForCheck).Elem()
+
+	valueField := record.FieldByName(objectFieldName)
+	idField := record.FieldByName("ID")
+
+	valueForCheck := record.FieldByName(objectFieldName).String()
+
+	if !valueField.IsValid() || valueForCheck == "" {
+		MakeErrorResponse(context, RestCoder.InternalServerError(), "[error] record is invalid")
+		err := fmt.Errorf("there is no valid value in field %s", objectFieldName)
+		logger.Error().Print(err.Error())
+		return err
+	}
+
+	id := uint64(0)
+	if idField.CanUint() {
+		id = idField.Uint()
+	}
+
+	if id > 0 {
+		var old T
+		if err := db.Model(&old).Where("id = ?", id).First(&old).Error; err != nil {
+			MakeErrorResponse(context, RestCoder.NotFound(), "record not found")
+			return fmt.Errorf("unable to find old record for id [%d]", id)
+		}
+
+		oldValue := reflect.ValueOf(old).FieldByName(objectFieldName).String()
+
+		if oldValue == valueForCheck {
+			valueForCheck = ""
+		}
+	}
+
+	if valueForCheck != "" {
+		var m T
+		var count int64
+		if err := db.Model(&m).Where(fmt.Sprintf("`%s` = ?", dbFieldName), valueForCheck).Count(&count).Error; err != nil {
+			MakeErrorResponse(context, RestCoder.InternalServerError(), fmt.Sprintf("[error] %s is invalid", objectFieldName))
+			logger.Error().Printf("%s [%s] duplication check failed: [%v]", objectFieldName, valueForCheck, err)
+			return err
+		} else if count > 0 {
+			msg := fmt.Sprintf("%s [%s] has been taken", objectFieldName, valueForCheck)
+			MakeErrorResponse(context, RestCoder.BadRequest(), msg)
+			return errors.New(msg)
+		}
+	}
+
+	return nil
 }

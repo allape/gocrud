@@ -1,9 +1,9 @@
 package gocrud
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/allape/gogger"
@@ -22,18 +22,24 @@ func SetupDualPrimaryKeyModelController[T any](
 
 	var jsonFieldName1, jsonFieldName2 string
 
-	// startup check
+	// setup check
 	// use a block to drop them after check is done
 	{
 		record := new(T)
 		reflected := reflect.TypeOf(record).Elem()
 
-		if _, ok := reflected.FieldByName(objectFieldName1); !ok {
+		ofn1, ok := reflected.FieldByName(objectFieldName1)
+		if !ok {
 			return fmt.Errorf("field %s is invalid", objectFieldName1)
+		} else if ofn1.Type.Kind() != IDKind {
+			return fmt.Errorf("type of field %s is invalid, should be %d", objectFieldName1, IDKind)
 		}
 
-		if _, ok := reflected.FieldByName(objectFieldName2); !ok {
+		ofn2, ok := reflected.FieldByName(objectFieldName2)
+		if !ok {
 			return fmt.Errorf("field %s is invalid", objectFieldName2)
+		} else if ofn2.Type.Kind() != IDKind {
+			return fmt.Errorf("type of field %s is invalid, should be %d", objectFieldName2, IDKind)
 		}
 
 		jsonFieldName1 = GetJSONFieldName(record, objectFieldName1)
@@ -81,74 +87,91 @@ func SetupDualPrimaryKeyModelController[T any](
 		MakeOkayDataResponse(context, list)
 	})
 
-	// /save/[jsonField1 || jsonField2]?[jsonField1]=1,2,3...&[jsonField2]=1,2,3...
-	// delete by primaryFieldName before save
-	group.POST("/save/:primaryFieldName", func(c *gin.Context) {
-		primaryFieldName := strings.TrimSpace(c.Param("primaryFieldName"))
-		if primaryFieldName != jsonFieldName1 && primaryFieldName != jsonFieldName2 {
-			MakeErrorResponse(c, RestCoder.BadRequest(), "field name invalid")
+	group.PUT("/save", func(context *gin.Context) {
+		var record T
+		if err := context.ShouldBind(&record); err != nil {
+			MakeErrorResponse(context, RestCoder.BadRequest(), "[error] failed to parse body")
 			return
 		}
 
-		field1Ids := IDsFromCommaSeparatedString(c.Query(jsonFieldName1))
-		field2Ids := IDsFromCommaSeparatedString(c.Query(jsonFieldName2))
+		reflected := reflect.ValueOf(record)
 
-		var primaryId ID
-		var secondaryIds []ID
+		id1 := reflected.FieldByName(objectFieldName1).Uint()
+		if id1 == 0 {
+			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("%s can not be 0", jsonFieldName1))
+			return
+		}
+
+		id2 := reflected.FieldByName(objectFieldName2).Uint()
+		if id2 == 0 {
+			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("%s can not be 0", jsonFieldName2))
+			return
+		}
+
+		if err := db.Save(&record).Error; err != nil {
+			logger.Error().Printf("failed to save record: %v", err)
+			return
+		}
+
+		MakeOkayDataResponse(context, record)
+	})
+
+	group.POST("/save/:deletedBy/:deletedId", func(context *gin.Context) {
+		deletedBy := strings.TrimSpace(context.Param("deletedBy"))
+		if deletedBy != jsonFieldName1 && deletedBy != jsonFieldName2 {
+			MakeErrorResponse(context, RestCoder.BadRequest(), "field for delete is invalid")
+			return
+		}
+
+		deletedId, err := strconv.ParseUint(context.Param("deletedId"), 10, 64)
+		if err != nil {
+			MakeErrorResponse(context, RestCoder.BadRequest(), "id for delete is invalid")
+			return
+		} else if deletedId == 0 {
+			MakeErrorResponse(context, RestCoder.BadRequest(), "id for delete can not be 0")
+			return
+		}
+
+		var records []T
+		if err := context.ShouldBind(&records); err != nil {
+			MakeErrorResponse(context, RestCoder.BadRequest(), "invalid request body")
+			return
+		}
 
 		var objectPrimaryFieldName string
-		var objectSecondaryFieldName string
 		var dbFieldName string
 
-		switch primaryFieldName {
+		switch deletedBy {
 		case jsonFieldName1:
-			primaryId = Pick(field1Ids, 0, 0)
-			secondaryIds = field2Ids
 			objectPrimaryFieldName = objectFieldName1
-			objectSecondaryFieldName = objectFieldName2
 			dbFieldName = databaseFieldName1
 		case jsonFieldName2:
-			primaryId = Pick(field2Ids, 0, 0)
-			secondaryIds = field1Ids
 			objectPrimaryFieldName = objectFieldName2
-			objectSecondaryFieldName = objectFieldName1
 			dbFieldName = databaseFieldName2
 		}
 
-		if primaryId == 0 {
-			MakeErrorResponse(c, RestCoder.BadRequest(), "pid cannot be empty")
-			return
+		for i, record := range records {
+			reflected := reflect.ValueOf(record)
+			idField := reflected.FieldByName(objectPrimaryFieldName)
+			id := idField.Uint()
+			if id != deletedId {
+				MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("id of record at %d is invalid, expect %d, but got %d", i, deletedId, id))
+				return
+			}
 		}
-
-		secondaryIds = RemoveDuplication(secondaryIds)
 
 		count := int64(0)
 
-		err := db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Delete(new(T), fmt.Sprintf("`%s` = ?", dbFieldName), primaryId).Error; err != nil {
+		err = db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Delete(new(T), fmt.Sprintf("`%s` = ?", dbFieldName), deletedId).Error; err != nil {
 				return err
 			}
 
-			if len(secondaryIds) == 0 {
+			if len(records) == 0 {
 				return nil
 			}
 
-			items := make([]*T, len(secondaryIds))
-			for i, sid := range secondaryIds {
-				record := new(T)
-
-				reflected := reflect.ValueOf(record).Elem()
-
-				primaryField := reflected.FieldByName(objectPrimaryFieldName)
-				primaryField.SetUint(uint64(primaryId))
-
-				secondaryField := reflected.FieldByName(objectSecondaryFieldName)
-				secondaryField.SetUint(uint64(sid))
-
-				items[i] = record
-			}
-
-			res := tx.Save(items)
+			res := tx.Save(records)
 			if res.Error != nil {
 				return res.Error
 			}
@@ -158,69 +181,36 @@ func SetupDualPrimaryKeyModelController[T any](
 			return nil
 		})
 		if err != nil {
-			logger.Error().Printf("failed to save %v for %d: %v", secondaryIds, primaryId, err)
-			MakeErrorResponse(c, RestCoder.InternalServerError(), "[error] failed to save")
+			logger.Error().Printf("failed to save %v for %s of %d: %v", records, deletedBy, deletedId, err)
+			MakeErrorResponse(context, RestCoder.InternalServerError(), "[error] failed to save")
 			return
 		}
 
-		MakeOkayDataResponse(c, count)
+		MakeOkayDataResponse(context, count)
 	})
 
-	return nil
-}
-
-// DuplicateFieldCheck
-// T must extend from Base which must contain id field
-func DuplicateFieldCheck[T any](
-	db *gorm.DB, context *gin.Context, logger *gogger.Logger,
-	objectForCheck *T, objectFieldName, dbFieldName string,
-) error {
-	record := reflect.ValueOf(objectForCheck).Elem()
-
-	valueField := record.FieldByName(objectFieldName)
-	idField := record.FieldByName("ID")
-
-	valueForCheck := record.FieldByName(objectFieldName).String()
-
-	if !valueField.IsValid() || valueForCheck == "" {
-		MakeErrorResponse(context, RestCoder.InternalServerError(), "[error] record is invalid")
-		err := fmt.Errorf("there is no valid value in field %s", objectFieldName)
-		logger.Error().Print(err.Error())
-		return err
-	}
-
-	id := uint64(0)
-	if idField.CanUint() {
-		id = idField.Uint()
-	}
-
-	if id > 0 {
-		var old T
-		if err := db.Model(&old).Where("id = ?", id).First(&old).Error; err != nil {
-			MakeErrorResponse(context, RestCoder.NotFound(), "record not found")
-			return fmt.Errorf("unable to find old record for id [%d]", id)
+	// ?[jsonFieldName1]=id1&[jsonFieldName2]=id2
+	group.DELETE("", func(context *gin.Context) {
+		id1, err := strconv.ParseUint(context.Query(jsonFieldName1), 10, 64)
+		if err != nil {
+			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("value of %s is invalid", jsonFieldName1))
+			return
+		}
+		id2, err := strconv.ParseUint(context.Query(jsonFieldName2), 10, 64)
+		if err != nil {
+			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("value of %s is invalid", jsonFieldName2))
+			return
 		}
 
-		oldValue := reflect.ValueOf(old).FieldByName(objectFieldName).String()
-
-		if oldValue == valueForCheck {
-			valueForCheck = ""
+		res := db.Delete(new(T), fmt.Sprintf("`%s` = ? AND `%s` = ?", databaseFieldName1, databaseFieldName2), id1, id2)
+		if res.Error != nil {
+			logger.Error().Printf("failed to delete at %d,%d: %v", id1, id2, res.Error)
+			MakeErrorResponse(context, RestCoder.InternalServerError(), "[error] failed to delete")
+			return
 		}
-	}
 
-	if valueForCheck != "" {
-		var m T
-		var count int64
-		if err := db.Model(&m).Where(fmt.Sprintf("`%s` = ?", dbFieldName), valueForCheck).Count(&count).Error; err != nil {
-			MakeErrorResponse(context, RestCoder.InternalServerError(), fmt.Sprintf("[error] %s is invalid", objectFieldName))
-			logger.Error().Printf("%s [%s] duplication check failed: [%v]", objectFieldName, valueForCheck, err)
-			return err
-		} else if count > 0 {
-			msg := fmt.Sprintf("%s [%s] has been taken", objectFieldName, valueForCheck)
-			MakeErrorResponse(context, RestCoder.BadRequest(), msg)
-			return errors.New(msg)
-		}
-	}
+		MakeOkayDataResponse(context, res.RowsAffected)
+	})
 
 	return nil
 }
