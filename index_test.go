@@ -48,7 +48,7 @@ func TestNewSingleHTMLServe(t *testing.T) {
 		_ = router.Run(HttpBinding)
 	}()
 
-	Wait(t)
+	wait(t)
 
 	//goland:noinspection HttpUrlsUsage
 	url := fmt.Sprintf("http://%s/ui/index.html", HttpBinding)

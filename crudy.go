@@ -8,12 +8,16 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"slices"
+)
+
+type (
+	SearchParams    map[string]string
+	HttpStatusRange [2]int
 )
 
 var (
-	DefaultOkCodes       = []int{200}
-	ErrorBaseURLRequired = errors.New("BaseURL is required")
+	DefaultOkayHttpStatusRange = HttpStatusRange{http.StatusOK, http.StatusMultipleChoices}
+	ErrorBaseURLRequired       = errors.New("BaseURL is required")
 )
 
 type CrudyOption[T any] interface {
@@ -22,15 +26,21 @@ type CrudyOption[T any] interface {
 
 type CrudyBasicOptions[T any] struct {
 	CrudyOption[T]
-	BaseURL    string
-	HttpClient *http.Client
-	OkCodes    []int
+	BaseURL             string
+	HttpClient          *http.Client
+	OkayHttpStatusRange *HttpStatusRange
 }
 
 func (b CrudyBasicOptions[T]) Apply(crudy *Crudy[T]) error {
-	crudy.baseURL = b.BaseURL
-	crudy.httpClient = b.HttpClient
-	crudy.okCodes = b.OkCodes
+	if b.BaseURL != "" {
+		crudy.baseURL = b.BaseURL
+	}
+	if b.HttpClient != nil {
+		crudy.httpClient = b.HttpClient
+	}
+	if b.OkayHttpStatusRange != nil {
+		crudy.okayHttpStatusRange = b.OkayHttpStatusRange
+	}
 	return nil
 }
 
@@ -60,30 +70,39 @@ func NewCrudy[T any](baseURL string, options ...CrudyOption[T]) (*Crudy[T], erro
 		return nil, ErrorBaseURLRequired
 	}
 
+	_, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, err
+	}
+
 	if crudy.httpClient == nil {
 		crudy.httpClient = http.DefaultClient
 	}
-	if crudy.okCodes == nil {
-		crudy.okCodes = DefaultOkCodes
+	if crudy.okayHttpStatusRange == nil {
+		crudy.okayHttpStatusRange = &DefaultOkayHttpStatusRange
 	}
 
 	if crudy.defaultPageSize == 0 {
-		crudy.defaultPageSize = uint64(DefaultPageSize)
+		crudy.defaultPageSize = DefaultPageSize
 	}
 
 	return crudy, nil
 }
 
-func MakeJSONRequest[T any, RR any](crudy *Crudy[T], u *url.URL, method string, body io.Reader, res *R[RR]) error {
+func MakeJSONRequest[T any](
+	httpClient *http.Client, okayHttpStatusRange *HttpStatusRange,
+	u *url.URL, method string,
+	body io.Reader, res *R[T],
+) error {
 	req, err := http.NewRequest(method, u.String(), body)
 	if err != nil {
 		return err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := crudy.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -91,8 +110,10 @@ func MakeJSONRequest[T any, RR any](crudy *Crudy[T], u *url.URL, method string, 
 		_ = resp.Body.Close()
 	}()
 
-	if !slices.Contains(crudy.okCodes, resp.StatusCode) {
-		return fmt.Errorf("status code: %d", resp.StatusCode)
+	if okayHttpStatusRange != nil {
+		if resp.StatusCode < okayHttpStatusRange[0] || resp.StatusCode >= okayHttpStatusRange[1] {
+			return fmt.Errorf("status code: %d", resp.StatusCode)
+		}
 	}
 
 	content, err := io.ReadAll(resp.Body)
@@ -123,14 +144,14 @@ func MakeJSONRequest[T any, RR any](crudy *Crudy[T], u *url.URL, method string, 
 }
 
 type Crudy[T any] struct {
-	baseURL    string
-	httpClient *http.Client
-	okCodes    []int
+	baseURL             string
+	httpClient          *http.Client
+	okayHttpStatusRange *HttpStatusRange // okayHttpStatusRange[0] <= status code < okayHttpStatusRange[1]
 
 	defaultPageSize uint64
 }
 
-func (c *Crudy[T]) BuildURL(uri string, searchParams map[string]string) (*url.URL, error) {
+func (c *Crudy[T]) BuildURL(uri string, searchParams SearchParams) (*url.URL, error) {
 	u, err := url.Parse(c.baseURL + uri)
 	if err != nil {
 		return nil, err
@@ -145,7 +166,7 @@ func (c *Crudy[T]) BuildURL(uri string, searchParams map[string]string) (*url.UR
 	return u, nil
 }
 
-func (c *Crudy[T]) Page(current, size uint64, searchParams map[string]string) ([]T, error) {
+func (c *Crudy[T]) Page(current, size uint64, searchParams SearchParams) ([]T, error) {
 	if current <= 0 {
 		current = 1
 	}
@@ -164,7 +185,7 @@ func (c *Crudy[T]) Page(current, size uint64, searchParams map[string]string) ([
 	}
 
 	var res R[[]T]
-	err = MakeJSONRequest(c, u, http.MethodPost, bytes.NewReader(body), &res)
+	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodPost, bytes.NewReader(body), &res)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +193,7 @@ func (c *Crudy[T]) Page(current, size uint64, searchParams map[string]string) ([
 	return res.Data, nil
 }
 
-func (c *Crudy[T]) All(searchParams map[string]string) ([]T, error) {
+func (c *Crudy[T]) All(searchParams SearchParams) ([]T, error) {
 	u, err := c.BuildURL("/all", nil)
 	if err != nil {
 		return nil, err
@@ -184,7 +205,7 @@ func (c *Crudy[T]) All(searchParams map[string]string) ([]T, error) {
 	}
 
 	var res R[[]T]
-	err = MakeJSONRequest(c, u, http.MethodPost, bytes.NewReader(body), &res)
+	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodPost, bytes.NewReader(body), &res)
 	if err != nil {
 		return nil, err
 	}
@@ -192,14 +213,14 @@ func (c *Crudy[T]) All(searchParams map[string]string) ([]T, error) {
 	return res.Data, nil
 }
 
-func (c *Crudy[T]) Count(searchParams map[string]string) (uint64, error) {
+func (c *Crudy[T]) Count(searchParams SearchParams) (uint64, error) {
 	u, err := c.BuildURL("/count", searchParams)
 	if err != nil {
 		return 0, err
 	}
 
 	var res R[uint64]
-	err = MakeJSONRequest(c, u, http.MethodGet, nil, &res)
+	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodGet, nil, &res)
 	if err != nil {
 		return 0, err
 	}
@@ -214,7 +235,7 @@ func (c *Crudy[T]) One(id ID) (*T, error) {
 	}
 
 	var res R[T]
-	err = MakeJSONRequest(c, u, http.MethodGet, nil, &res)
+	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodGet, nil, &res)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +255,7 @@ func (c *Crudy[T]) Save(t *T) (*T, error) {
 	}
 
 	var res R[T]
-	err = MakeJSONRequest(c, u, http.MethodPut, bytes.NewReader(content), &res)
+	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodPut, bytes.NewReader(content), &res)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +270,7 @@ func (c *Crudy[T]) Delete(id ID) (bool, error) {
 	}
 
 	var res R[bool]
-	err = MakeJSONRequest(c, u, http.MethodDelete, nil, &res)
+	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodDelete, nil, &res)
 	if err != nil {
 		return false, err
 	}

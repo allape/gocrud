@@ -91,7 +91,7 @@ func TestStaticServ(t *testing.T) {
 		_ = engine.Run(HttpBinding)
 	}()
 
-	Wait(t)
+	wait(t)
 
 	randomBytes, err := NewRandomBytes(10*MegaByte + rand.Intn(100)*MegaByte)
 	if err != nil {

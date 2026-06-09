@@ -3,7 +3,7 @@ package gocrud
 import (
 	"bytes"
 	"encoding/base64"
-	"log"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -33,8 +33,8 @@ type Tag struct {
 }
 
 type UserTag struct {
-	UserID ID `json:"userId,omitempty"`
-	TagID  ID `json:"tagId"`
+	UserID ID `json:"userId,omitempty" gorm:"primaryKey"`
+	TagID  ID `json:"tagId" gorm:"primaryKey"`
 }
 
 type SecretUser struct {
@@ -42,33 +42,28 @@ type SecretUser struct {
 	Name string `json:"name" censored:"aes.base64"`
 }
 
-func startServer(t *testing.T) (*gin.Engine, string) {
-	engine := gin.New()
-
-	engine.Use(RecoveryHandler(true))
-	engine.Use(NewCors())
-
+func basicSetup() (*gorm.DB, *gin.Engine, error) {
 	_, err := os.Stat(TestDBName)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			t.Fatal(err)
+			return nil, nil, err
 		}
 	} else {
 		err = os.Remove(TestDBName)
 		if err != nil {
-			t.Fatal(err)
+			return nil, nil, err
 		}
 	}
 
 	db, err := gorm.Open(sqlite.Open(TestDBName), &gorm.Config{
-		Logger: logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
+		Logger: logger.New(gogger.New("database").Info(), logger.Config{
 			SlowThreshold: 200 * time.Millisecond,
 			LogLevel:      logger.Info,
 			Colorful:      true,
 		}),
 	})
 	if err != nil {
-		t.Fatal(err)
+		return nil, nil, err
 	}
 
 	err = db.AutoMigrate(
@@ -78,22 +73,44 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 		&UserTag{},
 	)
 	if err != nil {
+		return nil, nil, err
+	}
+
+	engine := gin.New()
+	engine.Use(RecoveryHandler(true))
+	engine.Use(NewCors())
+
+	return db, engine, nil
+}
+
+func TestSetup(t *testing.T) {
+	db, engine, err := basicSetup()
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = Setup(nil, db, nil, &Crud[User]{})
-	if err == nil {
-		t.Fatal("expected error")
+	if !errors.Is(err, NilGroupError) {
+		t.Fatalf("expecting NilGroupError, got %v", err)
+		return
 	}
 
 	err = Setup(engine.Group("/user"), nil, nil, &Crud[User]{})
-	if err == nil {
+	if !errors.Is(err, NilDatabaseError) {
 		t.Fatal("expected error")
 	}
+}
 
-	userLogger := gogger.New("controller:user")
+func TestNormalUser(t *testing.T) {
+	db, engine, err := basicSetup()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	err = Setup(engine.Group("/user"), db, nil, &Crud[User]{
+	userL := gogger.New("controller:user")
+	userCrudL := userL.New("crud")
+
+	err = Setup(engine.Group("/user"), db, userCrudL, &Crud[User]{
 		EnableGetAll: true,
 		SearchHandlers: BaseSearchHandlers(SearchHandlers{
 			"id": KeywordIn("id", func(value []string) []string {
@@ -113,7 +130,7 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 			}
 
 			if err := DuplicateFieldCheck[User](
-				db, context, userLogger, record,
+				db, context, userCrudL, record,
 				"Name", "name",
 			); err != nil {
 				return
@@ -124,84 +141,28 @@ func startServer(t *testing.T) (*gin.Engine, string) {
 		t.Fatal(err)
 	}
 
-	censor, err := censored.NewDefaultCensor(&censored.Config{
-		Password: []byte("123456789_0"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = Setup(engine.Group("/vip-user"), db, nil, &Crud[SecretUser]{
-		EnableGetAll: true,
-		GetCensors: func(_ *gin.Context, _ *gorm.DB) ([]*censored.Censor, error) {
-			return []*censored.Censor{censor}, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = Setup(engine.Group("/vip-user-in-public"), db, nil, &Crud[SecretUser]{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = Setup(engine.Group("/hard-deletion-user"), db, nil, &Crud[User]{
-		OnDelete: NewHardDeleteHandler[User](RestCoder),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	userTagLogger := gogger.New("controller:usertag")
-
-	err = SetupDualPrimaryKeyModelController[UserTag](
-		engine.Group("/user-tag"), db, userTagLogger,
-		"UserID", "TagID",
-		"user_id", "tag_id",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return engine, "127.0.0.1:8080"
-}
-
-func TestDefault(t *testing.T) {
-	router, binding := startServer(t)
+	var binding = "127.0.0.1:8001"
+	var addr = "http://" + binding
 
 	go func() {
-		_ = router.Run(binding)
+		_ = engine.Run(binding)
 	}()
 
-	t.Log("Server started on port 8080")
+	t.Logf("Server started on %s", binding)
 
-	Wait(t)
+	wait(t)
 
-	//goland:noinspection HttpUrlsUsage
-	var AddrPrefix = "http://" + binding
-
-	crudy, err := NewCrudy[User]("I am an invalid URL, ^^^%%%$$$$")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = crudy.Save(&User{})
-	if err == nil {
-		t.Fatal("expected an invalid url error")
-	}
-
-	crudy, err = NewCrudy[User](
-		AddrPrefix+"/user",
+	crudy, err := NewCrudy[User](
+		addr+"/user",
 		CrudyPageOptions[User]{
-			DefaultSize: uint64(DefaultPageSize),
+			DefaultSize: DefaultPageSize,
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// test error field
-	_, err = crudy.All(map[string]string{
+	_, err = crudy.All(SearchParams{
 		"field_not_found": "test",
 	})
 	if err == nil {
@@ -240,7 +201,7 @@ func TestDefault(t *testing.T) {
 	}
 
 	// test get all
-	all, err := crudy.All(map[string]string{
+	all, err := crudy.All(SearchParams{
 		"name":  "test",
 		"in_id": "1,,,23,4,5,6,2,3,4,",
 	})
@@ -253,7 +214,7 @@ func TestDefault(t *testing.T) {
 	}
 
 	// test KeywordStatement
-	all, err = crudy.All(map[string]string{
+	all, err = crudy.All(SearchParams{
 		"age_gte": "10",
 	})
 	if err != nil {
@@ -265,7 +226,7 @@ func TestDefault(t *testing.T) {
 	}
 
 	// test KeywordStatement
-	all, err = crudy.All(map[string]string{
+	all, err = crudy.All(SearchParams{
 		"age_gte": "abc",
 	})
 	if err != nil {
@@ -277,7 +238,7 @@ func TestDefault(t *testing.T) {
 	}
 
 	// test get all with id filter
-	all, err = crudy.All(map[string]string{
+	all, err = crudy.All(SearchParams{
 		"id": "1,3,5",
 	})
 	if err != nil {
@@ -348,7 +309,7 @@ func TestDefault(t *testing.T) {
 	}
 
 	// test count
-	count, err := crudy.Count(map[string]string{
+	count, err := crudy.Count(SearchParams{
 		"deleted": "false",
 	})
 	if err != nil {
@@ -366,44 +327,112 @@ func TestDefault(t *testing.T) {
 	} else if u1.DeletedAt == nil {
 		t.Fatal("expected deleted user")
 	}
+}
 
-	// hard delete
-	hardDeleteCrudy, err := NewCrudy[User](AddrPrefix + "/hard-deletion-user")
+func TestHardDelete(t *testing.T) {
+	db, engine, err := basicSetup()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	deleted, err = hardDeleteCrudy.Delete(1)
+	err = Setup(engine.Group("/user"), db, nil, &Crud[User]{
+		OnDelete: NewHardDeleteHandler[User](RestCoder),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var binding = "127.0.0.1:8002"
+	var addr = "http://" + binding
+
+	go func() {
+		_ = engine.Run(binding)
+	}()
+
+	t.Logf("Server started on %s", binding)
+
+	wait(t)
+
+	crudy, err := NewCrudy[User](addr + "/user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = crudy.Save(&User{Name: "test1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := crudy.Delete(1)
 	if err != nil {
 		t.Fatal(err)
 	} else if !deleted {
 		t.Fatal("response is not true")
 	}
 
-	u1, err = crudy.One(1)
+	_, err = crudy.One(1)
 	if err == nil {
 		t.Fatal("expected error")
 	}
+}
 
-	// test vip
-	vipCrudy, err := NewCrudy[SecretUser](AddrPrefix + "/vip-user")
+func TestSecretUser(t *testing.T) {
+	db, engine, err := basicSetup()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	vipInPublicCrudy, err := NewCrudy[SecretUser](AddrPrefix + "/vip-user-in-public")
+	censor, err := censored.NewDefaultCensor(&censored.Config{
+		Password: []byte("123456789_0"),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = vipCrudy.Save(&SecretUser{
+	err = Setup(engine.Group("/user"), db, nil, &Crud[SecretUser]{
+		EnableGetAll: true,
+		GetCensors: func(_ *gin.Context, _ *gorm.DB) ([]*censored.Censor, error) {
+			return []*censored.Censor{censor}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = Setup(engine.Group("/user-not-decoded"), db, nil, &Crud[SecretUser]{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var binding = "127.0.0.1:8003"
+	var addr = "http://" + binding
+
+	go func() {
+		_ = engine.Run(binding)
+	}()
+
+	t.Logf("Server started on %s", binding)
+
+	wait(t)
+
+	crudy, err := NewCrudy[SecretUser](addr + "/user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	crudyNotDecoded, err := NewCrudy[SecretUser](addr + "/user-not-decoded")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = crudy.Save(&SecretUser{
 		Name: "I am a freak",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	freak, err := vipCrudy.One(1)
+	freak, err := crudy.One(1)
 	if err != nil {
 		t.Fatal(err)
 	} else if freak == nil {
@@ -412,21 +441,21 @@ func TestDefault(t *testing.T) {
 		t.Fatal("freak is not decensored")
 	}
 
-	freaks, err := vipCrudy.Page(1, 10, nil)
+	freaks, err := crudy.Page(1, 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if len(freaks) != 1 {
 		t.Fatal("freaks length is not 1")
 	}
 
-	freaks, err = vipCrudy.All(nil)
+	freaks, err = crudy.All(nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if len(freaks) != 1 {
 		t.Fatal("freaks length is not 1")
 	}
 
-	publicFreak, err := vipInPublicCrudy.One(1)
+	publicFreak, err := crudyNotDecoded.One(1)
 	if err != nil {
 		t.Fatal(err)
 	} else if publicFreak == nil {
@@ -446,10 +475,26 @@ func TestDefault(t *testing.T) {
 // TestStartServer used by frontend testing
 //
 //goland:noinspection GoUnusedFunction
-func _TestStartServer(t *testing.T) {
-	router, binding := startServer(t)
-	static := router.Group("/static")
-	err := NewHttpFileSystem(static, TestData, &HttpFileSystemConfig{
+func testStartServer(t *testing.T) {
+	db, engine, err := basicSetup()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = Setup(engine.Group("/user"), db, nil, &Crud[User]{
+		EnableGetAll: true,
+		SearchHandlers: BaseSearchHandlers(SearchHandlers{
+			"in_id":     KeywordIDIn("id", nil),
+			"like_name": KeywordLike("name", nil),
+			"name":      KeywordEqual("name", nil),
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	static := engine.Group("/static")
+	err = NewHttpFileSystem(static, TestData, &HttpFileSystemConfig{
 		AllowOverwrite: true,
 		AllowUpload:    true,
 	})
@@ -458,7 +503,7 @@ func _TestStartServer(t *testing.T) {
 	}
 
 	go func() {
-		_ = router.Run(binding)
+		_ = engine.Run("127.0.0.1:8080")
 	}()
 
 	Wait4CtrlC()

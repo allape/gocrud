@@ -16,19 +16,19 @@ import (
 )
 
 var (
-	NilGroupError      = errors.New("engine is nil")
-	NilRepositoryError = errors.New("database is nil")
+	NilGroupError    = errors.New("group is nil")
+	NilDatabaseError = errors.New("database is nil")
 )
 
 var (
-	DefaultPageSizes = []int64{10, 20, 50, 100}
-	DefaultPageSize  = int64(50)
+	DefaultPageSizes = []uint64{10, 20, 50, 100}
+	DefaultPageSize  = uint64(50)
 )
 
 type Crud[T any] struct {
 	DisallowNonstandardPageSize bool
-	DefaultPageSize             int64
-	PageSizes                   []int64
+	DefaultPageSize             uint64
+	PageSizes                   []uint64
 
 	SearchHandlers SearchHandlers
 
@@ -52,8 +52,8 @@ type Crud[T any] struct {
 	WillCount func(context *gin.Context, db *gorm.DB) *gorm.DB
 	DidCount  func(count *int64, context *gin.Context, db *gorm.DB)
 
-	WillPage func(pageNum *int64, pageSize *int64, context *gin.Context, db *gorm.DB) *gorm.DB
-	DidPage  func(pageNum int64, pageSize int64, list []T, context *gin.Context, db *gorm.DB)
+	WillPage func(pageNum *uint64, pageSize *uint64, context *gin.Context, db *gorm.DB) *gorm.DB
+	DidPage  func(pageNum uint64, pageSize uint64, list []T, context *gin.Context, db *gorm.DB)
 
 	WillSave func(record *T, context *gin.Context, db *gorm.DB)
 	DidSave  func(record *T, context *gin.Context, db *gorm.DB)
@@ -273,12 +273,12 @@ func (crud *Crud[T]) one(context *gin.Context) {
 }
 
 func (crud *Crud[T]) page(context *gin.Context) {
-	pageNum, err := strconv.ParseInt(context.Param("pageNum"), 10, 64)
+	pageNum, err := strconv.ParseUint(context.Param("pageNum"), 10, 64)
 	if err != nil {
 		crud.error(context, crud.Coder.BadRequest(), "invalid page number")
 		return
 	}
-	pageSize, err := strconv.ParseInt(context.Param("pageSize"), 10, 64)
+	pageSize, err := strconv.ParseUint(context.Param("pageSize"), 10, 64)
 	if err != nil {
 		crud.error(context, crud.Coder.BadRequest(), "invalid page size")
 		return
@@ -441,7 +441,7 @@ func Setup[T any](
 		return NilGroupError
 	}
 	if database == nil {
-		return NilRepositoryError
+		return NilDatabaseError
 	}
 
 	if crud == nil {

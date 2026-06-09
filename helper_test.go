@@ -33,13 +33,6 @@ func NewRandomBytes(size int) ([]byte, error) {
 	return random, nil
 }
 
-func Wait(t *testing.T) {
-	for i := 3; i > 0; i-- {
-		t.Log(i, "...")
-		time.Sleep(time.Second)
-	}
-}
-
 func fetchBytes(method, url string, reader io.Reader, headers map[string]string) ([]byte, error) {
 	req, err := http.NewRequest(method, url, reader)
 	if err != nil {
@@ -202,5 +195,12 @@ func TestIsNotEmptyArray(t *testing.T) {
 
 	if !IsNotEmptyArray([]int{1, 2, 3}) {
 		t.Fatal("expect true, got false")
+	}
+}
+
+func wait(t *testing.T) {
+	for i := 3; i > 0; i-- {
+		t.Logf("...%d", i)
+		time.Sleep(time.Second)
 	}
 }

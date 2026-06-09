@@ -76,9 +76,9 @@ func SaveAsDigestedFile(
 		digest+path.Ext(filename),
 	)
 
-	fullpath := path.Join(folder, filename)
+	fullPath := path.Join(folder, filename)
 
-	stat, err := os.Stat(fullpath)
+	stat, err := os.Stat(fullPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			//return "", ErrorFileExists
@@ -88,7 +88,7 @@ func SaveAsDigestedFile(
 		return "", "", ErrorFileIsDir
 	}
 
-	basepath := path.Dir(fullpath)
+	basepath := path.Dir(fullPath)
 
 	if _, err = os.Stat(basepath); err != nil {
 		if os.IsNotExist(err) {
@@ -101,7 +101,7 @@ func SaveAsDigestedFile(
 		}
 	}
 
-	file, err := os.Create(fullpath)
+	file, err := os.Create(fullPath)
 	if err != nil {
 		return "", "", err
 	}
@@ -116,10 +116,10 @@ func SaveAsDigestedFile(
 
 	nn, err := io.Copy(file, tmpFile)
 	if err != nil {
-		_ = os.Remove(fullpath)
+		_ = os.Remove(fullPath)
 		return "", "", err
 	} else if n != nn {
-		_ = os.Remove(fullpath)
+		_ = os.Remove(fullPath)
 		return "", "", ErrorIncompleteWrite
 	}
 
@@ -161,10 +161,10 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 			filename = string(saved)
 		} else {
 			filename = context.Param("filepath")
-			fullpath := path.Join(folder, filename)
-			basepath := path.Dir(fullpath)
+			fullPath := path.Join(folder, filename)
+			basePath := path.Dir(fullPath)
 
-			stat, err := os.Stat(fullpath)
+			stat, err := os.Stat(fullPath)
 			if err == nil {
 				if !config.AllowOverwrite {
 					//MakeErrorResponse(context, config.Coder.Conflict(), ErrorFileExists)
@@ -186,9 +186,9 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 				}
 			}
 
-			if _, err := os.Stat(basepath); err != nil {
+			if _, err := os.Stat(basePath); err != nil {
 				if os.IsNotExist(err) {
-					err = os.MkdirAll(basepath, os.ModePerm)
+					err = os.MkdirAll(basePath, os.ModePerm)
 					if err != nil {
 						MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 						return
@@ -199,7 +199,7 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 				}
 			}
 
-			file, err := os.Create(fullpath)
+			file, err := os.Create(fullPath)
 			if err != nil {
 				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 				return
@@ -210,14 +210,14 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 
 			n, err := io.Copy(file, context.Request.Body)
 			if err != nil {
-				_ = os.Remove(fullpath)
+				_ = os.Remove(fullPath)
 				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 				return
 			}
 
 			contextLength := context.Request.ContentLength
 			if contextLength > 0 && n != contextLength {
-				_ = os.Remove(fullpath)
+				_ = os.Remove(fullPath)
 				MakeErrorResponse(context, config.Coder.InternalServerError(), ErrorIncompleteWrite)
 				return
 			}
