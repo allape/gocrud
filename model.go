@@ -26,18 +26,24 @@ type Base struct {
 }
 
 func BaseSearchHandlers(overrideSearchHandlers ...SearchHandlers) SearchHandlers {
-	base := map[string]SearchHandler{
-		"in_id":             KeywordIDIn("id", nil),
+	base := SearchHandlers{
+		"in_id":   KeywordIDIn("id", nil),
+		"deleted": NewSoftDeleteSearchHandler(""),
+
 		"orderBy_createdAt": SortBy("created_at"),
 		"orderBy_updatedAt": SortBy("updated_at"),
 		"orderBy_deletedAt": SortBy("deleted_at"),
-		"deleted":           NewSoftDeleteSearchHandler(""),
+		"orderBy_priority":  SortBy("priority"),
 
-		"orderBy_priority": SortBy("priority"),
 		// `order by` must be followed by `ASC` or `DESC`
 		// `sort by` has defined the order
 		"sortByPriorityThenUpdatedAt": func(db *gorm.DB, values []string, _ *gin.Context) (*gorm.DB, error) {
-			return db.Order("`priority` DESC, `updated_at` DESC"), nil
+			if doSort, ok := PickFirstValuableString(values); ok {
+				if doSort != "false" {
+					return db.Order("`priority` DESC, `updated_at` DESC"), nil
+				}
+			}
+			return db, nil
 		},
 	}
 	for _, handlers := range overrideSearchHandlers {
