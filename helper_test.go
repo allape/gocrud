@@ -150,20 +150,20 @@ func TestRemoveDuplication(t *testing.T) {
 	}
 }
 
-func TestGetJSONFieldName(t *testing.T) {
-	userTag := UserTag{
-		UserID: 1,
-		TagID:  2,
+func TestGetJSONFieldNameOf(t *testing.T) {
+	jsonFields, err := GetJSONFieldNameOf[UserTag]("UserID", "TagID")
+	if err != nil {
+		t.Fatal(err)
+	} else if len(jsonFields) != 2 {
+		t.Fatalf("expect 2, got %d", len(jsonFields))
 	}
 
-	userIdJsonFieldName := GetJSONFieldName(userTag, "UserID")
-	if userIdJsonFieldName != "userId" {
-		t.Fatalf("expect userId, got %s", userIdJsonFieldName)
+	if jsonFields[0] != "userId" {
+		t.Fatalf("expect userId, got %s", jsonFields[0])
 	}
 
-	tagIdJsonFieldName := GetJSONFieldName(userTag, "TagID")
-	if tagIdJsonFieldName != "tagId" {
-		t.Fatalf("expect tagId, got %s", tagIdJsonFieldName)
+	if jsonFields[1] != "tagId" {
+		t.Fatalf("expect tagId, got %s", jsonFields[1])
 	}
 }
 

@@ -1,6 +1,7 @@
 package gocrud
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"slices"
@@ -96,8 +97,8 @@ func PickFirstValuableString(array []string) (string, bool) {
 	return "", false
 }
 
-func NowString(pattern string) string {
-	return time.Now().Format(Ternary(pattern == "", "2006-01-02 15:04:05.000", pattern))
+func NowString(patternOrEmpty string) string {
+	return time.Now().Format(Ternary(patternOrEmpty == "", "2006-01-02 15:04:05.000", patternOrEmpty))
 }
 
 func MapFuncOverCommaSeparatedString(mapFunc func(string), css string) {
@@ -129,28 +130,6 @@ func RemoveDuplication[T ~[]E, E comparable](array T) T {
 	return fresh
 }
 
-func GetJSONFieldName(record any, objectFieldName string) string {
-	t := reflect.TypeOf(record)
-
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-
-	field, ok := t.FieldByName(objectFieldName)
-	if !ok {
-		return ""
-	}
-
-	jsonTag := field.Tag.Get("json")
-
-	frags := strings.Split(jsonTag, ",")
-	if len(frags) == 0 {
-		return ""
-	}
-
-	return strings.TrimSpace(frags[0])
-}
-
 func IsNotEmptyArray(v any) bool {
 	k := reflect.ValueOf(v)
 
@@ -163,4 +142,26 @@ func IsNotEmptyArray(v any) bool {
 	}
 
 	return k.Len() > 0
+}
+
+func GetJSONFieldNameOf[T any](fields ...string) ([]string, error) {
+	reflected := reflect.TypeOf(new(T)).Elem()
+
+	jsonFieldNames := make([]string, len(fields))
+
+	for i, field := range fields {
+		objectField, ok := reflected.FieldByName(field)
+		if !ok {
+			return nil, fmt.Errorf("field %s not found", field)
+		}
+		jsonTag := objectField.Tag.Get("json")
+
+		frags := strings.Split(jsonTag, ",")
+		if len(frags) == 0 {
+			return nil, fmt.Errorf("field %s has no json tag", field)
+		}
+		jsonFieldNames[i] = strings.TrimSpace(frags[0])
+	}
+
+	return jsonFieldNames, nil
 }

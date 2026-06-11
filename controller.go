@@ -2,6 +2,8 @@ package gocrud
 
 import (
 	"fmt"
+	"maps"
+	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
@@ -15,6 +17,7 @@ func SetupDualPrimaryKeyModelController[T any](
 	group *gin.RouterGroup, db *gorm.DB, logger *gogger.Logger,
 	objectFieldName1, objectFieldName2 string,
 	databaseFieldName1, databaseFieldName2 string,
+	extraSearchHandlers ...SearchHandlers,
 ) error {
 	if objectFieldName1 == "" || objectFieldName2 == "" {
 		return fmt.Errorf("field1 and field2 cannot be empty")
@@ -42,39 +45,55 @@ func SetupDualPrimaryKeyModelController[T any](
 			return fmt.Errorf("type of field %s is invalid, should be %d", objectFieldName2, IDKind)
 		}
 
-		jsonFieldName1 = GetJSONFieldName(record, objectFieldName1)
-		if jsonFieldName1 == "" {
-			return fmt.Errorf("failed to get the json field name of %s", objectFieldName1)
+		jsonFields, err := GetJSONFieldNameOf[T](objectFieldName1, objectFieldName2)
+		if err != nil || len(jsonFields) != 2 {
+			return fmt.Errorf("failed to get JSON fields: %v", err)
 		}
 
-		jsonFieldName2 = GetJSONFieldName(record, objectFieldName2)
-		if jsonFieldName2 == "" {
-			return fmt.Errorf("failed to get the json field name of %s", objectFieldName2)
-		}
+		jsonFieldName1 = jsonFields[0]
+		jsonFieldName2 = jsonFields[1]
 	}
 
 	inFieldName1 := "in_" + jsonFieldName1
 	inFieldName2 := "in_" + jsonFieldName2
 
-	inField1WhereStatement := fmt.Sprintf("`%s` IN ?", databaseFieldName1)
-	inField2WhereStatement := fmt.Sprintf("`%s` IN ?", databaseFieldName2)
+	// used to mark if inFieldName1 or inFieldName2 has been triggered
+	const ContextKeyForHandledKeywordIn = "gocrud:dpkm:didkeywordin"
 
-	group.GET("/all", func(context *gin.Context) {
-		f1 := IDsFromCommaSeparatedString(context.Query(inFieldName1))
-		f2 := IDsFromCommaSeparatedString(context.Query(inFieldName2))
-		if len(f1) == 0 && len(f2) == 0 {
-			MakeErrorResponse(context, RestCoder.BadRequest(), "ids cannot be empty")
-			return
+	var handleKeywordIdIn = func(databaseFieldName string) SearchHandler {
+		return func(db *gorm.DB, values []string, context *gin.Context) (*gorm.DB, error) {
+			return KeywordIDIn(databaseFieldName, func(value []ID) []ID {
+				if len(value) > 0 {
+					context.Set(ContextKeyForHandledKeywordIn, true)
+				}
+				return value
+			})(db, values, context)
 		}
+	}
+
+	searchHandlers := SearchHandlers{
+		inFieldName1: handleKeywordIdIn(databaseFieldName1),
+		inFieldName2: handleKeywordIdIn(databaseFieldName2),
+	}
+	for _, handlers := range extraSearchHandlers {
+		maps.Insert(searchHandlers, maps.All(handlers))
+	}
+
+	var getAllHandler gin.HandlerFunc = func(context *gin.Context) {
+		var err error
 
 		repo := db.Model(new(T))
 
-		if len(f1) > 0 {
-			repo = repo.Where(inField1WhereStatement, f1)
+		repo, err = HandleSearch(context, repo, searchHandlers)
+		if err != nil {
+			MakeErrorResponse(context, RestCoder.BadRequest(), "[error] failed to handle search")
+			return
 		}
 
-		if len(f2) > 0 {
-			repo = repo.Where(inField2WhereStatement, f2)
+		_, ok := context.Get(ContextKeyForHandledKeywordIn)
+		if !ok {
+			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("at least one of %s or %s should not be empty", inFieldName1, inFieldName2))
+			return
 		}
 
 		var list []T
@@ -85,7 +104,10 @@ func SetupDualPrimaryKeyModelController[T any](
 		}
 
 		MakeOkayDataResponse(context, list)
-	})
+	}
+
+	group.GET("/all", getAllHandler)
+	group.POST("/all", getAllHandler)
 
 	group.PUT("/save", func(context *gin.Context) {
 		var record T
@@ -213,4 +235,71 @@ func SetupDualPrimaryKeyModelController[T any](
 	})
 
 	return nil
+}
+
+// DualPrimaryKeyModelHandler
+// T1: model 1, should have ID field, connected by objectFieldName1 of DPKM
+// T2: model 2, should have ID field, connected by objectFieldName2 of DPKM
+// DPKM: dual primary key model
+type DualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any] struct {
+	httpClient          *http.Client
+	okayHttpStatusRange *HttpStatusRange
+
+	objectFieldName1   string
+	objectFieldName2   string
+	databaseFieldName1 string
+	databaseFieldName2 string
+	jsonFieldName1     string
+	jsonFieldName2     string
+}
+
+func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) GetAll() {
+	// TODO
+}
+
+func NewDualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any](
+	httpClient *http.Client,
+	okayHttpStatusRange *HttpStatusRange,
+	objectFieldName1, objectFieldName2 string,
+	databaseFieldName1, databaseFieldName2 string,
+) (*DualPrimaryKeyModelHandler[T1, T2, DPKM], error) {
+	if objectFieldName1 == "" {
+		return nil, fmt.Errorf("objectFieldName1 is empty")
+	}
+	if objectFieldName2 == "" {
+		return nil, fmt.Errorf("objectFieldName2 is empty")
+	}
+	if databaseFieldName1 == "" {
+		return nil, fmt.Errorf("databaseFieldName1 is empty")
+	}
+	if databaseFieldName2 == "" {
+		return nil, fmt.Errorf("databaseFieldName2 is empty")
+	}
+
+	jsonFields, err := GetJSONFieldNameOf[DPKM](objectFieldName1, objectFieldName2)
+	if err != nil {
+		return nil, err
+	} else if len(jsonFields) != 2 {
+		return nil, fmt.Errorf("expect 2 json fields, got %d", len(jsonFields))
+	}
+
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	if okayHttpStatusRange == nil {
+		okayHttpStatusRange = &DefaultOkayHttpStatusRange
+	}
+
+	handler := &DualPrimaryKeyModelHandler[T1, T2, DPKM]{
+		httpClient:          httpClient,
+		okayHttpStatusRange: okayHttpStatusRange,
+		objectFieldName1:    objectFieldName1,
+		objectFieldName2:    objectFieldName2,
+		databaseFieldName1:  databaseFieldName1,
+		databaseFieldName2:  databaseFieldName2,
+
+		jsonFieldName1: jsonFields[0],
+		jsonFieldName2: jsonFields[1],
+	}
+	return handler, nil
 }

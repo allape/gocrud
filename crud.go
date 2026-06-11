@@ -3,7 +3,6 @@ package gocrud
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"reflect"
 	"slices"
 	"strconv"
@@ -130,46 +129,7 @@ func (crud *Crud[T]) makeArray() []T {
 }
 
 func (crud *Crud[T]) handleSearches(context *gin.Context, db *gorm.DB) (*gorm.DB, error) {
-	if crud.SearchHandlers != nil {
-		var err error
-		var handledKey []string
-
-		if context.Request.Method == http.MethodPost {
-			var bodyPayload map[string]string
-			err = context.ShouldBind(&bodyPayload)
-			if err != nil {
-				return nil, err
-			}
-
-			for key, value := range bodyPayload {
-				if handler, ok := crud.SearchHandlers[key]; ok {
-					db, err = handler(db, []string{value}, context)
-					if err != nil {
-						return nil, err
-					}
-					handledKey = append(handledKey, key)
-				}
-			}
-		}
-
-		query := context.Request.URL.Query()
-		for key, value := range query {
-			// body value has higher priority
-			if slices.Contains(handledKey, key) {
-				continue
-			}
-
-			if handler, ok := crud.SearchHandlers[key]; ok {
-				slices.Reverse(value)
-				db, err = handler(db, value, context)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-	}
-
-	return db, nil
+	return HandleSearch(context, db, crud.SearchHandlers)
 }
 
 func (crud *Crud[T]) ok(context *gin.Context, data any) {

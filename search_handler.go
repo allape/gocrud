@@ -2,6 +2,8 @@ package gocrud
 
 import (
 	"fmt"
+	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +16,27 @@ type (
 	SearchHandler  = func(db *gorm.DB, values []string, context *gin.Context) (*gorm.DB, error)
 	SearchHandlers = map[string]SearchHandler
 )
+
+func HandleSearch(context *gin.Context, db *gorm.DB, searchHandlers SearchHandlers) (*gorm.DB, error) {
+	if searchHandlers == nil {
+		return db, nil
+	}
+
+	searches, err := GetSearchValuesFromContext(context)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range searches {
+		if handler, ok := searchHandlers[key]; ok {
+			db, err = handler(db, value, context)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return db, nil
+}
 
 type (
 	Operator                       string
@@ -161,4 +184,35 @@ func OverflowedArrayTrimmerFilter[T any](max int) func([]T) []T {
 	return func(value []T) []T {
 		return OverflowedArrayTrimmer(value, max)
 	}
+}
+
+func GetSearchValuesFromContext(context *gin.Context) (url.Values, error) {
+	var searchValues = make(url.Values)
+
+	if context.Request.Method != http.MethodGet {
+		var bodyPayload map[string]string
+		err := context.ShouldBind(&bodyPayload)
+		if err != nil {
+			return nil, err
+		}
+
+		for key, value := range bodyPayload {
+			searchValues[key] = []string{value}
+		}
+	}
+
+	query := context.Request.URL.Query()
+	for key, value := range query {
+		// body value has higher priority
+		if _, ok := searchValues[key]; ok {
+			continue
+		}
+
+		// the later value has higher priority
+		// for example: the last value will override previous values
+		slices.Reverse(value)
+		searchValues[key] = value
+	}
+
+	return searchValues, nil
 }

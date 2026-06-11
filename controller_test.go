@@ -234,6 +234,49 @@ func TestSetupDualPrimaryKeyModelController(t *testing.T) {
 		t.Fatalf("got %d, want 0", len(allR.Data))
 	}
 
+	// test "get all" in POST
+	allR = new(R[[]UserTag])
+	err = MakeJSONRequest(
+		http.DefaultClient, &DefaultOkayHttpStatusRange,
+		mustBeURL(addr+"/user-tag/all"), http.MethodPost,
+		mustBeReader(map[string]string{"in_userId": "123"}),
+		allR,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allR.Data) != 4 {
+		t.Fatalf("got %d, want 4", len(allR.Data))
+	}
+
+	allR = new(R[[]UserTag])
+	err = MakeJSONRequest(
+		http.DefaultClient, &DefaultOkayHttpStatusRange,
+		mustBeURL(addr+"/user-tag/all"), http.MethodPost,
+		mustBeReader(map[string]string{"in_userId": "456"}),
+		allR,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allR.Data) != 0 {
+		t.Fatalf("got %d, want 0", len(allR.Data))
+	}
+
+	allR = new(R[[]UserTag])
+	err = MakeJSONRequest(
+		http.DefaultClient, &DefaultOkayHttpStatusRange,
+		mustBeURL(addr+"/user-tag/all"), http.MethodPost,
+		mustBeReader(map[string]string{"in_tagId": "5"}),
+		allR,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allR.Data) != 1 {
+		t.Fatalf("got %d, want 1", len(allR.Data))
+	}
+
 	// endregion
 
 	// test delete old records before saving new records
@@ -268,4 +311,17 @@ func TestSetupDualPrimaryKeyModelController(t *testing.T) {
 	if len(allR.Data) != 2 {
 		t.Fatalf("got %d, want 2", len(allR.Data))
 	}
+}
+
+func TestNewDualPrimaryKeyModelHandler(t *testing.T) {
+	_, err := NewDualPrimaryKeyModelHandler[User, Tag, UserTag](
+		nil, nil,
+		"UserID", "TagID",
+		"user_id", "tag_id",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Fatalf("TODO")
 }
