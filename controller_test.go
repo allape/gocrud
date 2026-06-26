@@ -64,21 +64,18 @@ func TestSetupDualPrimaryKeyModelController(t *testing.T) {
 	wait(t)
 
 	// test basic save
-	saveR := new(R[UserTag])
+	saveR := new(R[int64])
 	err = MakeJSONRequest(
 		http.DefaultClient, &DefaultOkayHttpStatusRange,
 		mustBeURL(addr+"/user-tag/save"), http.MethodPut,
-		mustBeReader(UserTag{UserID: 123, TagID: 456}),
+		mustBeReader([]UserTag{{UserID: 123, TagID: 456}}),
 		saveR,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saveR.Data.UserID != 123 {
-		t.Fatalf("got %d, want 123", saveR.Data.UserID)
-	}
-	if saveR.Data.TagID != 456 {
-		t.Fatalf("got %d, want 456", saveR.Data.TagID)
+	if saveR.Data != 1 {
+		t.Errorf("expected %d, got %d", 1, saveR.Data)
 	}
 
 	// test "get all" of the saved records of above
@@ -314,8 +311,13 @@ func TestSetupDualPrimaryKeyModelController(t *testing.T) {
 }
 
 func TestNewDualPrimaryKeyModelHandler(t *testing.T) {
-	_, err := NewDualPrimaryKeyModelHandler[User, Tag, UserTag](
-		nil, nil,
+	db, engine, err := basicSetup()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = SetupDualPrimaryKeyModelController[UserTag](
+		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
 		"UserID", "TagID",
 		"user_id", "tag_id",
 	)
@@ -323,5 +325,131 @@ func TestNewDualPrimaryKeyModelHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Fatalf("TODO")
+	var binding = "127.0.0.1:8011"
+	var addr = "http://" + binding
+
+	go func() {
+		_ = engine.Run(binding)
+	}()
+
+	t.Logf("Server started on %s", binding)
+
+	wait(t)
+
+	handler, err := NewDualPrimaryKeyModelHandler[User, Tag, UserTag](
+		addr+"/user-tag", nil, nil,
+		"UserID", "TagID",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := handler.Save([]UserTag{
+		{UserID: 123, TagID: 456},
+	})
+	if err != nil {
+		t.Fatal(err)
+	} else if count != 1 {
+		t.Fatalf("got %d, want 1", count)
+	}
+
+	all, err := handler.GetAll([]ID{123}, nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(all) != 1 {
+		t.Fatalf("got %d, want 1", len(all))
+	} else if all[0].UserID != 123 {
+		t.Fatalf("got %d, want 123", all[0].UserID)
+	} else if all[0].TagID != 456 {
+		t.Fatalf("got %d, want 456", all[0].TagID)
+	}
+
+	count, err = handler.Delete(123, 567)
+	if err != nil {
+		t.Fatal(err)
+	} else if count != 0 {
+		t.Fatalf("got %d, want 0", count)
+	}
+
+	count, err = handler.Delete(123, 456)
+	if err != nil {
+		t.Fatal(err)
+	} else if count != 1 {
+		t.Fatalf("got %d, want 1", count)
+	}
+
+	count, err = handler.SaveAfterDelete(handler.ObjectFieldName1, 123, []UserTag{
+		{UserID: 456, TagID: 10},
+		{UserID: 123, TagID: 11},
+	})
+	if err == nil {
+		t.Fatalf("got nil, want error")
+	}
+
+	count, err = handler.SaveAfterDelete(handler.ObjectFieldName1, 123, []UserTag{
+		{UserID: 123, TagID: 1},
+		{UserID: 123, TagID: 2},
+		{UserID: 123, TagID: 3},
+		{UserID: 123, TagID: 5},
+	})
+	if err != nil {
+		t.Fatal(err)
+	} else if count != 4 {
+		t.Fatalf("got %d, want 4", count)
+	}
+
+	all, err = handler.GetAll([]ID{123}, nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(all) != 4 {
+		t.Fatalf("got %d, want 4", len(all))
+	}
+	if !slices.ContainsFunc(all, func(tag UserTag) bool {
+		return tag.UserID == 123 && tag.TagID == 5
+	}) {
+		t.Fatalf("should contain TagID of 5")
+	}
+	if slices.ContainsFunc(all, func(tag UserTag) bool {
+		return tag.UserID == 123 && tag.TagID == 4
+	}) {
+		t.Fatalf("should not contain TagID of 4")
+	}
+
+	all, err = handler.GetAll([]ID{456}, nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(all) != 0 {
+		t.Fatalf("got %d, want 0", len(all))
+	}
+
+	all, err = handler.GetAll(nil, []ID{5})
+	if err != nil {
+		t.Fatal(err)
+	} else if len(all) != 1 {
+		t.Fatalf("got %d, want 1", len(all))
+	}
+
+	all, err = handler.GetAll(nil, []ID{4})
+	if err != nil {
+		t.Fatal(err)
+	} else if len(all) != 0 {
+		t.Fatalf("got %d, want 0", len(all))
+	}
+
+	count, err = handler.SaveAfterDelete(handler.ObjectFieldName1, 123, []UserTag{
+		{UserID: 123, TagID: 10},
+		{UserID: 123, TagID: 11},
+	})
+	if err != nil {
+		t.Fatal(err)
+	} else if count != 2 {
+		t.Fatalf("got %d, want 2", count)
+	}
+
+	all, err = handler.GetAll([]ID{123}, nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(all) != 2 {
+		t.Fatalf("got %d, want 2", len(all))
+	}
 }

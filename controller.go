@@ -1,9 +1,13 @@
 package gocrud
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -110,32 +114,36 @@ func SetupDualPrimaryKeyModelController[T any](
 	group.POST("/all", getAllHandler)
 
 	group.PUT("/save", func(context *gin.Context) {
-		var record T
-		if err := context.ShouldBind(&record); err != nil {
+		var records []T
+		if err := context.ShouldBind(&records); err != nil {
 			MakeErrorResponse(context, RestCoder.BadRequest(), "[error] failed to parse body")
 			return
 		}
 
-		reflected := reflect.ValueOf(record)
+		for index, record := range records {
+			reflected := reflect.ValueOf(record)
 
-		id1 := reflected.FieldByName(objectFieldName1).Uint()
-		if id1 == 0 {
-			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("%s can not be 0", jsonFieldName1))
-			return
+			id1 := reflected.FieldByName(objectFieldName1).Uint()
+			if id1 == 0 {
+				MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("%s can not be 0 at %d", jsonFieldName1, index))
+				return
+			}
+
+			id2 := reflected.FieldByName(objectFieldName2).Uint()
+			if id2 == 0 {
+				MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("%s can not be 0 at %d", jsonFieldName2, index))
+				return
+			}
 		}
 
-		id2 := reflected.FieldByName(objectFieldName2).Uint()
-		if id2 == 0 {
-			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("%s can not be 0", jsonFieldName2))
-			return
-		}
+		res := db.Save(&records)
 
-		if err := db.Save(&record).Error; err != nil {
+		if err := res.Error; err != nil {
 			logger.Error().Printf("failed to save record: %v", err)
 			return
 		}
 
-		MakeOkayDataResponse(context, record)
+		MakeOkayDataResponse(context, res.RowsAffected)
 	})
 
 	group.POST("/save/:deletedBy/:deletedId", func(context *gin.Context) {
@@ -242,26 +250,142 @@ func SetupDualPrimaryKeyModelController[T any](
 // T2: model 2, should have ID field, connected by objectFieldName2 of DPKM
 // DPKM: dual primary key model
 type DualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any] struct {
+	baseURL             string
 	httpClient          *http.Client
 	okayHttpStatusRange *HttpStatusRange
 
-	objectFieldName1   string
-	objectFieldName2   string
-	databaseFieldName1 string
-	databaseFieldName2 string
-	jsonFieldName1     string
-	jsonFieldName2     string
+	ObjectFieldName1 string
+	ObjectFieldName2 string
+
+	jsonFieldName1 string
+	jsonFieldName2 string
 }
 
-func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) GetAll() {
-	// TODO
+func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) GetAll(t1IDs, t2IDs []ID, params ...SearchParams) ([]DPKM, error) {
+	if len(t1IDs) == 0 && len(t2IDs) == 0 {
+		return nil, errors.New("t1IDs and t2IDs can not be empty at the same time")
+	}
+
+	mergedParams := make(SearchParams)
+	for _, param := range params {
+		maps.Insert(mergedParams, maps.All(param))
+	}
+
+	if len(t1IDs) > 0 {
+		mergedParams["in_"+d.jsonFieldName1] = IDsJoin(t1IDs, ",")
+	}
+	if len(t2IDs) > 0 {
+		mergedParams["in_"+d.jsonFieldName2] = IDsJoin(t2IDs, ",")
+	}
+
+	u, err := url.Parse(d.baseURL + "/all")
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := json.Marshal(mergedParams)
+	if err != nil {
+		return nil, err
+	}
+
+	res := new(R[[]DPKM])
+
+	err = MakeJSONRequest[[]DPKM](d.httpClient, d.okayHttpStatusRange, u, http.MethodPost, bytes.NewReader(body), res)
+	if err != nil {
+		return nil, err
+	} else if res == nil {
+		return nil, errors.New("response is nil")
+	}
+
+	return res.Data, nil
+}
+
+func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) Save(records []DPKM) (int64, error) {
+	u, err := url.Parse(d.baseURL + "/save")
+	if err != nil {
+		return -1, err
+	}
+
+	body, err := json.Marshal(records)
+	if err != nil {
+		return -1, err
+	}
+
+	res := new(R[int64])
+	err = MakeJSONRequest(d.httpClient, d.okayHttpStatusRange, u, http.MethodPut, bytes.NewReader(body), res)
+	if err != nil {
+		return -1, err
+	}
+
+	return res.Data, nil
+}
+
+func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) SaveAfterDelete(deleteByField string, idToDelete ID, records []DPKM) (int64, error) {
+	if deleteByField != d.ObjectFieldName1 && deleteByField != d.ObjectFieldName2 {
+		return -1, fmt.Errorf("deleteByField must be %s or %s", d.ObjectFieldName1, d.ObjectFieldName2)
+	}
+
+	jsonField := ""
+	switch deleteByField {
+	case d.ObjectFieldName1:
+		jsonField = d.jsonFieldName1
+	case d.ObjectFieldName2:
+		jsonField = d.jsonFieldName2
+	}
+
+	u, err := url.Parse(fmt.Sprintf("%s/save/%s/%d", d.baseURL, jsonField, idToDelete))
+	if err != nil {
+		return -1, err
+	}
+
+	for index, record := range records {
+		reflected := reflect.ValueOf(record)
+		idField := reflected.FieldByName(deleteByField)
+
+		if idField.Uint() != uint64(idToDelete) {
+			return -1, fmt.Errorf("%s must be %d at index of %d", deleteByField, idToDelete, index)
+		}
+	}
+
+	body, err := json.Marshal(records)
+	if err != nil {
+		return -1, err
+	}
+
+	res := new(R[int64])
+
+	err = MakeJSONRequest(d.httpClient, d.okayHttpStatusRange, u, http.MethodPost, bytes.NewReader(body), res)
+	if err != nil {
+		return -1, err
+	} else if res == nil {
+		return -1, errors.New("response is nil")
+	}
+
+	return res.Data, nil
+}
+
+func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) Delete(id1, id2 ID) (int64, error) {
+	u, err := url.Parse(fmt.Sprintf("%s?%s=%d&%s=%d", d.baseURL, url.QueryEscape(d.jsonFieldName1), id1, url.QueryEscape(d.jsonFieldName2), id2))
+	if err != nil {
+		return -1, err
+	}
+
+	res := new(R[int64])
+	err = MakeJSONRequest(d.httpClient, d.okayHttpStatusRange, u, http.MethodDelete, bytes.NewReader(nil), res)
+	if err != nil {
+		return -1, err
+	} else if res == nil {
+		return -1, errors.New("response is nil")
+	}
+
+	return res.Data, nil
 }
 
 func NewDualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any](
+	baseURL string,
 	httpClient *http.Client,
 	okayHttpStatusRange *HttpStatusRange,
 	objectFieldName1, objectFieldName2 string,
-	databaseFieldName1, databaseFieldName2 string,
 ) (*DualPrimaryKeyModelHandler[T1, T2, DPKM], error) {
 	if objectFieldName1 == "" {
 		return nil, fmt.Errorf("objectFieldName1 is empty")
@@ -269,11 +393,23 @@ func NewDualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any](
 	if objectFieldName2 == "" {
 		return nil, fmt.Errorf("objectFieldName2 is empty")
 	}
-	if databaseFieldName1 == "" {
-		return nil, fmt.Errorf("databaseFieldName1 is empty")
-	}
-	if databaseFieldName2 == "" {
-		return nil, fmt.Errorf("databaseFieldName2 is empty")
+
+	{
+		reflected := reflect.TypeOf(new(DPKM)).Elem()
+
+		field1, ok := reflected.FieldByName(objectFieldName1)
+		if !ok {
+			return nil, fmt.Errorf("field %s does NOT exist in %s", objectFieldName1, reflected.Name())
+		} else if field1.Type.Kind() != IDKind {
+			return nil, fmt.Errorf("field %s type MUST be %s, but got %s", objectFieldName1, IDKind, field1.Type.Kind())
+		}
+
+		field2, ok := reflected.FieldByName(objectFieldName2)
+		if !ok {
+			return nil, fmt.Errorf("field %s does NOT exist in %s", objectFieldName2, reflected.Name())
+		} else if field2.Type.Kind() != IDKind {
+			return nil, fmt.Errorf("field %s type MUST be %s, but got %s", objectFieldName2, IDKind, field2.Type.Kind())
+		}
 	}
 
 	jsonFields, err := GetJSONFieldNameOf[DPKM](objectFieldName1, objectFieldName2)
@@ -291,12 +427,11 @@ func NewDualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any](
 	}
 
 	handler := &DualPrimaryKeyModelHandler[T1, T2, DPKM]{
+		baseURL:             baseURL,
 		httpClient:          httpClient,
 		okayHttpStatusRange: okayHttpStatusRange,
-		objectFieldName1:    objectFieldName1,
-		objectFieldName2:    objectFieldName2,
-		databaseFieldName1:  databaseFieldName1,
-		databaseFieldName2:  databaseFieldName2,
+		ObjectFieldName1:    objectFieldName1,
+		ObjectFieldName2:    objectFieldName2,
 
 		jsonFieldName1: jsonFields[0],
 		jsonFieldName2: jsonFields[1],

@@ -165,3 +165,11 @@ func GetJSONFieldNameOf[T any](fields ...string) ([]string, error) {
 
 	return jsonFieldNames, nil
 }
+
+func IDsJoin(ids []ID, sep string) string {
+	strIds := make([]string, len(ids))
+	for i, id := range ids {
+		strIds[i] = fmt.Sprintf("%d", id)
+	}
+	return strings.Join(strIds, sep)
+}
