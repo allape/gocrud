@@ -1,41 +1,12 @@
 package gocrud
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"net/http"
-	"net/url"
 	"slices"
 	"testing"
 
 	"github.com/allape/gogger"
 )
-
-func mustBeURL(urlStr string, searchParams ...SearchParams) *url.URL {
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		panic(err)
-	}
-
-	query := u.Query()
-	for _, params := range searchParams {
-		for key, value := range params {
-			query.Add(key, value)
-		}
-	}
-	u.RawQuery = query.Encode()
-
-	return u
-}
-
-func mustBeReader[T any](record T) io.Reader {
-	data, err := json.Marshal(record)
-	if err != nil {
-		panic(err)
-	}
-	return bytes.NewReader(data)
-}
 
 func TestSetupDualPrimaryKeyModelController(t *testing.T) {
 	db, engine, err := basicSetup()

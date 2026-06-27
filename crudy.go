@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 )
 
 type (
@@ -133,7 +134,8 @@ func MakeJSONRequest[T any](
 			return errors.New(anyRes.Message)
 		}
 
-		return errors.New("golang type of R is mismatched")
+		reflected := reflect.TypeOf(new(T)).Elem()
+		return fmt.Errorf("unable to convert from %v to %s", anyRes.Data, reflected.Name())
 	}
 
 	if res.Code != "0" {

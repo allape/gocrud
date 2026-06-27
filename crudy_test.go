@@ -1,10 +1,117 @@
 package gocrud
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 )
+
+func mustBeURL(urlStr string, searchParams ...SearchParams) *url.URL {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		panic(err)
+	}
+
+	query := u.Query()
+	for _, params := range searchParams {
+		for key, value := range params {
+			query.Add(key, value)
+		}
+	}
+	u.RawQuery = query.Encode()
+
+	return u
+}
+
+func mustBeReader[T any](record T) io.Reader {
+	data, err := json.Marshal(record)
+	if err != nil {
+		panic(err)
+	}
+	return bytes.NewReader(data)
+}
+
+func TestMakeJSONRequest(t *testing.T) {
+	db, engine, err := basicSetup()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = Setup(engine.Group("/user"), db, nil, &Crud[User]{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var binding = "127.0.0.1:8020"
+	var addr = "http://" + binding
+
+	go func() {
+		_ = engine.Run(binding)
+	}()
+
+	t.Logf("Server started on %s", binding)
+
+	wait(t)
+
+	// okay http status
+	res := new(R[any])
+	err = MakeJSONRequest(http.DefaultClient, &HttpStatusRange{100, 199}, mustBeURL(addr+"/user/one/1"), http.MethodGet, nil, res)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	t.Logf("%v", err)
+	if !strings.HasPrefix(err.Error(), "status code: ") {
+		t.Fatalf("expected error starts with [status code: ], but got %s", err.Error())
+	}
+
+	// json unmarshal error of type mismatch
+	res1 := new(R[User])
+	err = MakeJSONRequest(http.DefaultClient, nil, mustBeURL(addr+"/user/count"), http.MethodGet, nil, res1)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	t.Logf("%v", err)
+	if !strings.HasPrefix(err.Error(), "unable to convert from ") {
+		t.Fatalf("expected error starting with [unable to convert from ], but got %s", err.Error())
+	}
+
+	res2 := new(R[User])
+	err = MakeJSONRequest(http.DefaultClient, nil, mustBeURL(addr+"/user"), http.MethodPut, mustBeReader(User{
+		Name: "Tester1",
+	}), res2)
+	if err != nil {
+		t.Fatal(err)
+	} else if res2 == nil {
+		t.Fatal("nil response")
+	} else if res2.Data.ID != 1 {
+		t.Fatalf("expected ID 1, got %d", res2.Data.ID)
+	}
+
+	res3 := new(R[[]User])
+	err = MakeJSONRequest(http.DefaultClient, nil, mustBeURL(addr+"/user/page/1/10"), http.MethodPost, nil, res3)
+	if err != nil {
+		t.Fatal(err)
+	} else if res3 == nil {
+		t.Fatal("nil response")
+	} else if len(res3.Data) != 1 {
+		t.Fatalf("expected 1 user, got %d", len(res3.Data))
+	}
+
+	res4 := new(R[User])
+	err = MakeJSONRequest(http.DefaultClient, nil, mustBeURL(addr+"/user/one/1"), http.MethodGet, nil, res4)
+	if err != nil {
+		t.Fatal(err)
+	} else if res4 == nil {
+		t.Fatal("nil response")
+	} else if res4.Data.ID != 1 {
+		t.Fatalf("expected ID 1, got %d", res4.Data.ID)
+	}
+}
 
 func TestNewCrudy(t *testing.T) {
 	_, err := NewCrudy[User]("I am an invalid URL, ^^^%%%$$$$")
