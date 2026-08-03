@@ -205,7 +205,7 @@ func GetSearchValuesFromContext(context *gin.Context) (url.Values, error) {
 
 	if context.Request.Method != http.MethodGet {
 		var bodyPayload map[string]string
-		err := context.ShouldBind(&bodyPayload)
+		err := context.ShouldBindJSON(&bodyPayload)
 		if err != nil {
 			return nil, err
 		}

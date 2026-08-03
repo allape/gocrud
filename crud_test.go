@@ -495,11 +495,30 @@ func testStartServer(t *testing.T) {
 	err = Setup(engine.Group("/user"), db, nil, &Crud[User]{
 		EnableGetAll: true,
 		SearchHandlers: BaseSearchHandlers(SearchHandlers{
-			"in_id":     KeywordIDIn("id", nil),
 			"like_name": KeywordLike("name", nil),
 			"name":      KeywordEqual("name", nil),
 		}),
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = Setup(engine.Group("/tag"), db, nil, &Crud[Tag]{
+		EnableGetAll: true,
+		SearchHandlers: BaseSearchHandlers(SearchHandlers{
+			"like_name": KeywordLike("name", nil),
+			"name":      KeywordEqual("name", nil),
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = SetupM2MConnectorController[UserTag](
+		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
+		"UserID", "TagID",
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

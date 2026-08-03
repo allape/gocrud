@@ -143,7 +143,7 @@ func SetupM2MConnectorController[T any](
 
 	group.PUT("/save", func(context *gin.Context) {
 		var records []T
-		if err := context.ShouldBind(&records); err != nil {
+		if err := context.ShouldBindJSON(&records); err != nil {
 			MakeErrorResponse(context, RestCoder.BadRequest(), "[error] failed to parse body")
 			return
 		}
@@ -179,24 +179,24 @@ func SetupM2MConnectorController[T any](
 		MakeOkayDataResponse(context, res.RowsAffected)
 	})
 
-	group.POST("/save/:deletedBy/:deletedId", func(context *gin.Context) {
-		deletedBy := strings.TrimSpace(context.Param("deletedBy"))
-		if deletedBy != jsonFieldName1 && deletedBy != jsonFieldName2 {
+	group.POST("/save/:deleteByField/:deleteById", func(context *gin.Context) {
+		deleteByField := strings.TrimSpace(context.Param("deleteByField"))
+		if deleteByField != jsonFieldName1 && deleteByField != jsonFieldName2 {
 			MakeErrorResponse(context, RestCoder.BadRequest(), "field for delete is invalid")
 			return
 		}
 
-		deletedId, err := strconv.ParseUint(context.Param("deletedId"), 10, 64)
+		deleteById, err := strconv.ParseUint(context.Param("deleteById"), 10, 64)
 		if err != nil {
 			MakeErrorResponse(context, RestCoder.BadRequest(), "id for delete is invalid")
 			return
-		} else if deletedId == 0 {
+		} else if deleteById == 0 {
 			MakeErrorResponse(context, RestCoder.BadRequest(), "id for delete can not be 0")
 			return
 		}
 
 		var records []T
-		if err := context.ShouldBind(&records); err != nil {
+		if err := context.ShouldBindJSON(&records); err != nil {
 			MakeErrorResponse(context, RestCoder.BadRequest(), "invalid request body")
 			return
 		}
@@ -204,7 +204,7 @@ func SetupM2MConnectorController[T any](
 		var objectPrimaryFieldName string
 		var dbFieldName string
 
-		switch deletedBy {
+		switch deleteByField {
 		case jsonFieldName1:
 			objectPrimaryFieldName = objectFieldName1
 			dbFieldName = databaseFieldName1
@@ -217,8 +217,8 @@ func SetupM2MConnectorController[T any](
 			reflected := reflect.ValueOf(record)
 			idField := reflected.FieldByName(objectPrimaryFieldName)
 			id := idField.Uint()
-			if id != deletedId {
-				MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("id of record at %d is invalid, expect %d, but got %d", i, deletedId, id))
+			if id != deleteById {
+				MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("id of record at %d is invalid, expect %d, but got %d", i, deleteById, id))
 				return
 			}
 
@@ -231,7 +231,7 @@ func SetupM2MConnectorController[T any](
 		count := int64(0)
 
 		err = db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Delete(new(T), fmt.Sprintf("`%s` = ?", dbFieldName), deletedId).Error; err != nil {
+			if err := tx.Delete(new(T), fmt.Sprintf("`%s` = ?", dbFieldName), deleteById).Error; err != nil {
 				return err
 			}
 
@@ -249,7 +249,7 @@ func SetupM2MConnectorController[T any](
 			return nil
 		})
 		if err != nil {
-			logger.Error().Printf("failed to save %v for %s of %d: %v", records, deletedBy, deletedId, err)
+			logger.Error().Printf("failed to save %v for %s of %d: %v", records, deleteByField, deleteById, err)
 			MakeErrorResponse(context, RestCoder.InternalServerError(), "[error] failed to save")
 			return
 		}
