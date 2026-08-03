@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/allape/gogger"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func TestSetupM2MConnectorController(t *testing.T) {
@@ -17,7 +19,7 @@ func TestSetupM2MConnectorController(t *testing.T) {
 	err = SetupM2MConnectorController[UserTag](
 		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
 		"UserID", "TagID",
-		"user_id", "tag_id",
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -290,7 +292,14 @@ func TestNewM2MConnectorHandler(t *testing.T) {
 	err = SetupM2MConnectorController[UserTag](
 		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
 		"UserID", "TagID",
-		"user_id", "tag_id",
+		&SetupM2MConnectorControllerOptions[UserTag]{
+			OnRecordCheck: func(record *UserTag, db *gorm.DB, context *gin.Context) {
+				if record.UserID == 404 {
+					MakeErrorResponse(context, RestCoder.BadRequest(), "404 user id")
+					return
+				}
+			},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -423,4 +432,13 @@ func TestNewM2MConnectorHandler(t *testing.T) {
 	} else if len(all) != 2 {
 		t.Fatalf("got %d, want 2", len(all))
 	}
+
+	// test OnRecordCheck
+	_, err = handler.Save([]UserTag{
+		{UserID: 404, TagID: 1},
+	})
+	if err == nil {
+		t.Fatalf("got nil, want error")
+	}
+	t.Logf("got error: %v", err)
 }

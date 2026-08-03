@@ -17,19 +17,38 @@ import (
 	"gorm.io/gorm"
 )
 
+type SetupM2MConnectorControllerOptions[T any] struct {
+	// OnRecordCheck
+	// use context to abort process
+	OnRecordCheck func(record *T, db *gorm.DB, context *gin.Context)
+
+	// OnDelete
+	// use this to replace the original delete operation
+	OnDelete func(db *gorm.DB, context *gin.Context)
+
+	ExtraSearchHandlers SearchHandlers
+}
+
 // SetupM2MConnectorController
 // M2M: Many to Many, Models to Models
 func SetupM2MConnectorController[T any](
 	group *gin.RouterGroup, db *gorm.DB, logger *gogger.Logger,
 	objectFieldName1, objectFieldName2 string,
-	databaseFieldName1, databaseFieldName2 string,
-	extraSearchHandlers ...SearchHandlers,
+	options *SetupM2MConnectorControllerOptions[T],
 ) error {
 	if objectFieldName1 == "" || objectFieldName2 == "" {
 		return fmt.Errorf("field1 and field2 cannot be empty")
 	}
 
+	if options == nil {
+		options = &SetupM2MConnectorControllerOptions[T]{}
+	}
+	if options.OnRecordCheck == nil {
+		options.OnRecordCheck = func(record *T, db *gorm.DB, context *gin.Context) {}
+	}
+
 	var jsonFieldName1, jsonFieldName2 string
+	var databaseFieldName1, databaseFieldName2 string
 
 	// setup check
 	// use a block to drop them after check is done
@@ -57,6 +76,14 @@ func SetupM2MConnectorController[T any](
 
 		jsonFieldName1 = jsonFields[0]
 		jsonFieldName2 = jsonFields[1]
+
+		databaseFields, err := GetDatabaseFieldNameOf[T](db, objectFieldName1, objectFieldName2)
+		if err != nil || len(databaseFields) != 2 {
+			return fmt.Errorf("failed to get database fields: %v", err)
+		}
+
+		databaseFieldName1 = databaseFields[0]
+		databaseFieldName2 = databaseFields[1]
 	}
 
 	inFieldName1 := "in_" + jsonFieldName1
@@ -76,13 +103,13 @@ func SetupM2MConnectorController[T any](
 		}
 	}
 
-	searchHandlers := SearchHandlers{
-		inFieldName1: handleKeywordIdIn(databaseFieldName1),
-		inFieldName2: handleKeywordIdIn(databaseFieldName2),
-	}
-	for _, handlers := range extraSearchHandlers {
-		maps.Insert(searchHandlers, maps.All(handlers))
-	}
+	searchHandlers := MergeSearchHandlers(
+		SearchHandlers{
+			inFieldName1: handleKeywordIdIn(databaseFieldName1),
+			inFieldName2: handleKeywordIdIn(databaseFieldName2),
+		},
+		options.ExtraSearchHandlers,
+	)
 
 	var getAllHandler gin.HandlerFunc = func(context *gin.Context) {
 		var err error
@@ -133,6 +160,11 @@ func SetupM2MConnectorController[T any](
 			id2 := reflected.FieldByName(objectFieldName2).Uint()
 			if id2 == 0 {
 				MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("%s can not be 0 at %d", jsonFieldName2, index))
+				return
+			}
+
+			options.OnRecordCheck(&records[index], db, context)
+			if context.IsAborted() {
 				return
 			}
 		}
@@ -189,6 +221,11 @@ func SetupM2MConnectorController[T any](
 				MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("id of record at %d is invalid, expect %d, but got %d", i, deletedId, id))
 				return
 			}
+
+			options.OnRecordCheck(&records[i], db, context)
+			if context.IsAborted() {
+				return
+			}
 		}
 
 		count := int64(0)
@@ -222,6 +259,11 @@ func SetupM2MConnectorController[T any](
 
 	// ?[jsonFieldName1]=id1&[jsonFieldName2]=id2
 	group.DELETE("", func(context *gin.Context) {
+		if options.OnDelete != nil {
+			options.OnDelete(db, context)
+			return
+		}
+
 		id1, err := strconv.ParseUint(context.Query(jsonFieldName1), 10, 64)
 		if err != nil {
 			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("value of %s is invalid", jsonFieldName1))

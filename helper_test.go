@@ -167,6 +167,30 @@ func TestGetJSONFieldNameOf(t *testing.T) {
 	}
 }
 
+func TestGetDatabaseFieldNameOf(t *testing.T) {
+	db, _, err := basicSetup("TestGetDatabaseFieldNameOf.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	databaseFields, err := GetDatabaseFieldNameOf[UserTag](db, "UserID", "TagID")
+	if err != nil {
+		t.Fatal(err)
+	} else if len(databaseFields) != 2 {
+		t.Fatalf("expect 2, got %d", len(databaseFields))
+	}
+
+	t.Logf("%v", databaseFields)
+
+	if databaseFields[0] != "user_id" {
+		t.Fatalf("expect user_id, got %s", databaseFields[0])
+	}
+
+	if databaseFields[1] != "tag_id" {
+		t.Fatalf("expect tag_id, got %s", databaseFields[1])
+	}
+}
+
 func TestIsNotEmptyArray(t *testing.T) {
 	if IsNotEmptyArray(1) {
 		t.Fatal("expect false, got true")

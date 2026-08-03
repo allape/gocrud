@@ -3,7 +3,6 @@ package gocrud
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"reflect"
 	"strconv"
 	"time"
@@ -46,10 +45,7 @@ func BaseSearchHandlers(overrideSearchHandlers ...SearchHandlers) SearchHandlers
 			return db, nil
 		},
 	}
-	for _, handlers := range overrideSearchHandlers {
-		maps.Insert(base, maps.All(handlers))
-	}
-	return base
+	return MergeSearchHandlers(base, overrideSearchHandlers...)
 }
 
 func NewHardDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gorm.DB) bool {

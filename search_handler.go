@@ -2,6 +2,7 @@ package gocrud
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -36,6 +37,19 @@ func HandleSearch(context *gin.Context, db *gorm.DB, searchHandlers SearchHandle
 	}
 
 	return db, nil
+}
+
+func MergeSearchHandlers(searchHandlers SearchHandlers, extraSearchHandlers ...SearchHandlers) SearchHandlers {
+	if searchHandlers == nil {
+		searchHandlers = SearchHandlers{}
+	}
+	for _, handlers := range extraSearchHandlers {
+		if handlers == nil {
+			continue
+		}
+		maps.Insert(searchHandlers, maps.All(handlers))
+	}
+	return searchHandlers
 }
 
 type (
