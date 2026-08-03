@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	TestData = "testdata"
-	MegaByte = 1024 * 1024
+	TestDataDir = "testdata"
+	MegaByte    = 1024 * 1024
 )
 
 var HttpClient = &http.Client{}

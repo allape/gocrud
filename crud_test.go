@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -15,10 +16,6 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-)
-
-const (
-	TestDBName = "test.db"
 )
 
 type User struct {
@@ -42,20 +39,34 @@ type SecretUser struct {
 	Name string `json:"name" censored:"aes.base64"`
 }
 
-func basicSetup() (*gorm.DB, *gin.Engine, error) {
-	_, err := os.Stat(TestDBName)
+func basicSetup(databaseName string) (*gorm.DB, *gin.Engine, error) {
+	if databaseName == "" {
+		databaseName = "test.db"
+	}
+
+	databaseName = path.Join(TestDataDir, databaseName)
+
+	_, err := os.Stat(databaseName)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, nil, err
 		}
+
+		dir := path.Dir(databaseName)
+		if dir != "" && dir != "." && dir != "/" {
+			err = os.MkdirAll(dir, os.ModePerm)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
 	} else {
-		err = os.Remove(TestDBName)
+		err = os.Remove(databaseName)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
 
-	db, err := gorm.Open(sqlite.Open(TestDBName), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(databaseName), &gorm.Config{
 		Logger: logger.New(gogger.New("database").Info(), logger.Config{
 			SlowThreshold: 200 * time.Millisecond,
 			LogLevel:      logger.Info,
@@ -84,7 +95,7 @@ func basicSetup() (*gorm.DB, *gin.Engine, error) {
 }
 
 func TestSetup(t *testing.T) {
-	db, engine, err := basicSetup()
+	db, engine, err := basicSetup("TestSetup.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +113,7 @@ func TestSetup(t *testing.T) {
 }
 
 func TestNormalUser(t *testing.T) {
-	db, engine, err := basicSetup()
+	db, engine, err := basicSetup("TestNormalUser.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +341,7 @@ func TestNormalUser(t *testing.T) {
 }
 
 func TestHardDelete(t *testing.T) {
-	db, engine, err := basicSetup()
+	db, engine, err := basicSetup("TestHardDelete.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +388,7 @@ func TestHardDelete(t *testing.T) {
 }
 
 func TestSecretUser(t *testing.T) {
-	db, engine, err := basicSetup()
+	db, engine, err := basicSetup("TestSecretUser.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +487,7 @@ func TestSecretUser(t *testing.T) {
 //
 //goland:noinspection GoUnusedFunction
 func testStartServer(t *testing.T) {
-	db, engine, err := basicSetup()
+	db, engine, err := basicSetup("TestStartServer.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +505,7 @@ func testStartServer(t *testing.T) {
 	}
 
 	static := engine.Group("/static")
-	err = NewHttpFileSystem(static, TestData, &HttpFileSystemConfig{
+	err = NewHttpFileSystem(static, TestDataDir, &HttpFileSystemConfig{
 		AllowOverwrite: true,
 		AllowUpload:    true,
 	})

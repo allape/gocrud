@@ -9,7 +9,7 @@ import (
 )
 
 func TestSetupM2MConnectorController(t *testing.T) {
-	db, engine, err := basicSetup()
+	db, engine, err := basicSetup("TestSetupM2MConnectorController.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestSetupM2MConnectorController(t *testing.T) {
 }
 
 func TestNewM2MConnectorHandler(t *testing.T) {
-	db, engine, err := basicSetup()
+	db, engine, err := basicSetup("TestNewM2MConnectorHandler.db")
 	if err != nil {
 		t.Fatal(err)
 	}

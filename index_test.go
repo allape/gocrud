@@ -15,12 +15,12 @@ import (
 func TestNewSingleHTMLServe(t *testing.T) {
 	const HttpBinding = "127.0.0.1:8082"
 
-	err := os.MkdirAll(TestData, 0755)
+	err := os.MkdirAll(TestDataDir, 0755)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	indexPath := path.Join(TestData, "index.html")
+	indexPath := path.Join(TestDataDir, "index.html")
 
 	file, err := os.Create(indexPath)
 	if err != nil {

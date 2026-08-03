@@ -37,7 +37,7 @@ func mustBeReader[T any](record T) io.Reader {
 }
 
 func TestMakeJSONRequest(t *testing.T) {
-	db, engine, err := basicSetup()
+	db, engine, err := basicSetup("TestMakeJSONRequest.db")
 	if err != nil {
 		t.Fatal(err)
 	}

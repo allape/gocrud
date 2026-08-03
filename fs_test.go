@@ -50,7 +50,7 @@ func TestStaticServ(t *testing.T) {
 
 	coder := RestCoder
 
-	err := NewHttpFileSystem(group1, TestData, &HttpFileSystemConfig{
+	err := NewHttpFileSystem(group1, TestDataDir, &HttpFileSystemConfig{
 		AllowUpload:    true,
 		AllowOverwrite: true,
 		Coder:          coder,
@@ -59,7 +59,7 @@ func TestStaticServ(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = NewHttpFileSystem(group2, TestData, &HttpFileSystemConfig{
+	err = NewHttpFileSystem(group2, TestDataDir, &HttpFileSystemConfig{
 		AllowUpload:    true,
 		AllowOverwrite: false,
 		Coder:          coder,
@@ -68,7 +68,7 @@ func TestStaticServ(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = NewHttpFileSystem(group3, TestData, &HttpFileSystemConfig{
+	err = NewHttpFileSystem(group3, TestDataDir, &HttpFileSystemConfig{
 		AllowUpload:    false,
 		AllowOverwrite: false,
 		Coder:          coder,
@@ -77,7 +77,7 @@ func TestStaticServ(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = NewHttpFileSystem(group4, TestData, &HttpFileSystemConfig{
+	err = NewHttpFileSystem(group4, TestDataDir, &HttpFileSystemConfig{
 		AllowUpload:    true,
 		AllowOverwrite: true,
 		EnableDigest:   true,
@@ -117,7 +117,7 @@ func TestStaticServ(t *testing.T) {
 	}
 
 	// validate local
-	if ok, err := compareFileBytes(path.Join(TestData, TestFileName), randomBytes); !ok || err != nil {
+	if ok, err := compareFileBytes(path.Join(TestDataDir, TestFileName), randomBytes); !ok || err != nil {
 		t.Fatal("local bytes is not equal", err)
 	}
 
@@ -179,7 +179,7 @@ func TestStaticServ(t *testing.T) {
 		t.Fatalf("response status is not ok, got %s", result.Code)
 	}
 
-	if ok, err := compareFileBytes(path.Join(TestData, digest[:2], digest[2:4], digest+".mybin"), randomBytes); !ok || err != nil {
+	if ok, err := compareFileBytes(path.Join(TestDataDir, digest[:2], digest[2:4], digest+".mybin"), randomBytes); !ok || err != nil {
 		t.Fatal("local bytes is not equal", err)
 	}
 }
