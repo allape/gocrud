@@ -8,13 +8,13 @@ import (
 	"github.com/allape/gogger"
 )
 
-func TestSetupDualPrimaryKeyModelController(t *testing.T) {
+func TestSetupM2MConnectorController(t *testing.T) {
 	db, engine, err := basicSetup()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = SetupDualPrimaryKeyModelController[UserTag](
+	err = SetupM2MConnectorController[UserTag](
 		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
 		"UserID", "TagID",
 		"user_id", "tag_id",
@@ -281,13 +281,13 @@ func TestSetupDualPrimaryKeyModelController(t *testing.T) {
 	}
 }
 
-func TestNewDualPrimaryKeyModelHandler(t *testing.T) {
+func TestNewM2MConnectorHandler(t *testing.T) {
 	db, engine, err := basicSetup()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = SetupDualPrimaryKeyModelController[UserTag](
+	err = SetupM2MConnectorController[UserTag](
 		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
 		"UserID", "TagID",
 		"user_id", "tag_id",
@@ -307,7 +307,7 @@ func TestNewDualPrimaryKeyModelHandler(t *testing.T) {
 
 	wait(t)
 
-	handler, err := NewDualPrimaryKeyModelHandler[User, Tag, UserTag](
+	handler, err := NewM2MConnectorHandler[User, Tag, UserTag](
 		addr+"/user-tag", nil, nil,
 		"UserID", "TagID",
 	)

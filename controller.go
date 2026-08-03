@@ -17,7 +17,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupDualPrimaryKeyModelController[T any](
+// SetupM2MConnectorController
+// M2M: Many to Many, Models to Models
+func SetupM2MConnectorController[T any](
 	group *gin.RouterGroup, db *gorm.DB, logger *gogger.Logger,
 	objectFieldName1, objectFieldName2 string,
 	databaseFieldName1, databaseFieldName2 string,
@@ -62,7 +64,7 @@ func SetupDualPrimaryKeyModelController[T any](
 	inFieldName2 := "in_" + jsonFieldName2
 
 	// used to mark if inFieldName1 or inFieldName2 has been triggered
-	const ContextKeyForHandledKeywordIn = "gocrud:dpkm:didkeywordin"
+	const ContextKeyForHandledKeywordIn = "gocrud:m2mc:didkeywordin"
 
 	var handleKeywordIdIn = func(databaseFieldName string) SearchHandler {
 		return func(db *gorm.DB, values []string, context *gin.Context) (*gorm.DB, error) {
@@ -245,11 +247,11 @@ func SetupDualPrimaryKeyModelController[T any](
 	return nil
 }
 
-// DualPrimaryKeyModelHandler
-// T1: model 1, should have ID field, connected by objectFieldName1 of DPKM
-// T2: model 2, should have ID field, connected by objectFieldName2 of DPKM
-// DPKM: dual primary key model
-type DualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any] struct {
+// M2MConnectorHandler
+// M1: model 1, should have ID field, connected by objectFieldName1 of M2MConnector
+// M2: model 2, should have ID field, connected by objectFieldName2 of M2MConnector
+// M2M: Many to Many, Models to Models
+type M2MConnectorHandler[M1 any, M2 any, M2MConnector any] struct {
 	baseURL             string
 	httpClient          *http.Client
 	okayHttpStatusRange *HttpStatusRange
@@ -261,7 +263,7 @@ type DualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any] struct {
 	jsonFieldName2 string
 }
 
-func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) GetAll(t1IDs, t2IDs []ID, params ...SearchParams) ([]DPKM, error) {
+func (d *M2MConnectorHandler[M1, M2, M2MConnector]) GetAll(t1IDs, t2IDs []ID, params ...SearchParams) ([]M2MConnector, error) {
 	if len(t1IDs) == 0 && len(t2IDs) == 0 {
 		return nil, errors.New("t1IDs and t2IDs can not be empty at the same time")
 	}
@@ -288,9 +290,9 @@ func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) GetAll(t1IDs, t2IDs []ID, par
 		return nil, err
 	}
 
-	res := new(R[[]DPKM])
+	res := new(R[[]M2MConnector])
 
-	err = MakeJSONRequest[[]DPKM](d.httpClient, d.okayHttpStatusRange, u, http.MethodPost, bytes.NewReader(body), res)
+	err = MakeJSONRequest[[]M2MConnector](d.httpClient, d.okayHttpStatusRange, u, http.MethodPost, bytes.NewReader(body), res)
 	if err != nil {
 		return nil, err
 	} else if res == nil {
@@ -300,7 +302,7 @@ func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) GetAll(t1IDs, t2IDs []ID, par
 	return res.Data, nil
 }
 
-func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) Save(records []DPKM) (int64, error) {
+func (d *M2MConnectorHandler[M1, M2, M2MConnector]) Save(records []M2MConnector) (int64, error) {
 	u, err := url.Parse(d.baseURL + "/save")
 	if err != nil {
 		return -1, err
@@ -320,7 +322,7 @@ func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) Save(records []DPKM) (int64, 
 	return res.Data, nil
 }
 
-func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) SaveAfterDelete(deleteByField string, idToDelete ID, records []DPKM) (int64, error) {
+func (d *M2MConnectorHandler[M1, M2, M2MConnector]) SaveAfterDelete(deleteByField string, idToDelete ID, records []M2MConnector) (int64, error) {
 	if deleteByField != d.ObjectFieldName1 && deleteByField != d.ObjectFieldName2 {
 		return -1, fmt.Errorf("deleteByField must be %s or %s", d.ObjectFieldName1, d.ObjectFieldName2)
 	}
@@ -364,7 +366,7 @@ func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) SaveAfterDelete(deleteByField
 	return res.Data, nil
 }
 
-func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) Delete(id1, id2 ID) (int64, error) {
+func (d *M2MConnectorHandler[M1, M2, M2MConnector]) Delete(id1, id2 ID) (int64, error) {
 	u, err := url.Parse(fmt.Sprintf("%s?%s=%d&%s=%d", d.baseURL, url.QueryEscape(d.jsonFieldName1), id1, url.QueryEscape(d.jsonFieldName2), id2))
 	if err != nil {
 		return -1, err
@@ -381,12 +383,12 @@ func (d *DualPrimaryKeyModelHandler[T1, T2, DPKM]) Delete(id1, id2 ID) (int64, e
 	return res.Data, nil
 }
 
-func NewDualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any](
+func NewM2MConnectorHandler[M1 any, M2 any, M2MConnector any](
 	baseURL string,
 	httpClient *http.Client,
 	okayHttpStatusRange *HttpStatusRange,
 	objectFieldName1, objectFieldName2 string,
-) (*DualPrimaryKeyModelHandler[T1, T2, DPKM], error) {
+) (*M2MConnectorHandler[M1, M2, M2MConnector], error) {
 	if objectFieldName1 == "" {
 		return nil, fmt.Errorf("objectFieldName1 is empty")
 	}
@@ -395,7 +397,7 @@ func NewDualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any](
 	}
 
 	{
-		reflected := reflect.TypeOf(new(DPKM)).Elem()
+		reflected := reflect.TypeOf(new(M2MConnector)).Elem()
 
 		field1, ok := reflected.FieldByName(objectFieldName1)
 		if !ok {
@@ -412,7 +414,7 @@ func NewDualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any](
 		}
 	}
 
-	jsonFields, err := GetJSONFieldNameOf[DPKM](objectFieldName1, objectFieldName2)
+	jsonFields, err := GetJSONFieldNameOf[M2MConnector](objectFieldName1, objectFieldName2)
 	if err != nil {
 		return nil, err
 	} else if len(jsonFields) != 2 {
@@ -426,7 +428,7 @@ func NewDualPrimaryKeyModelHandler[T1 any, T2 any, DPKM any](
 		okayHttpStatusRange = &DefaultOkayHttpStatusRange
 	}
 
-	handler := &DualPrimaryKeyModelHandler[T1, T2, DPKM]{
+	handler := &M2MConnectorHandler[M1, M2, M2MConnector]{
 		baseURL:             baseURL,
 		httpClient:          httpClient,
 		okayHttpStatusRange: okayHttpStatusRange,
