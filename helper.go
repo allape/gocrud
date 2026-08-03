@@ -102,7 +102,7 @@ func NowString(patternOrEmpty string) string {
 }
 
 func MapFuncOverCommaSeparatedString(mapFunc func(string), css string) {
-	for _, s := range strings.Split(css, ",") {
+	for s := range strings.SplitSeq(css, ",") {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
@@ -133,7 +133,7 @@ func RemoveDuplication[T ~[]E, E comparable](array T) T {
 func IsNotEmptyArray(v any) bool {
 	k := reflect.ValueOf(v)
 
-	if k.Kind() == reflect.Ptr {
+	if k.Kind() == reflect.Pointer {
 		k = k.Elem()
 	}
 
@@ -145,7 +145,7 @@ func IsNotEmptyArray(v any) bool {
 }
 
 func GetJSONFieldNameOf[T any](fields ...string) ([]string, error) {
-	reflected := reflect.TypeOf(new(T)).Elem()
+	reflected := reflect.TypeFor[T]()
 
 	jsonFieldNames := make([]string, len(fields))
 

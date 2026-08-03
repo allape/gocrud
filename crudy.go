@@ -134,7 +134,7 @@ func MakeJSONRequest[T any](
 			return errors.New(anyRes.Message)
 		}
 
-		reflected := reflect.TypeOf(new(T)).Elem()
+		reflected := reflect.TypeFor[T]()
 		return fmt.Errorf("unable to convert from %v to %s", anyRes.Data, reflected.Name())
 	}
 

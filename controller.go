@@ -34,8 +34,7 @@ func SetupM2MConnectorController[T any](
 	// setup check
 	// use a block to drop them after check is done
 	{
-		record := new(T)
-		reflected := reflect.TypeOf(record).Elem()
+		reflected := reflect.TypeFor[T]()
 
 		ofn1, ok := reflected.FieldByName(objectFieldName1)
 		if !ok {
@@ -397,7 +396,7 @@ func NewM2MConnectorHandler[M1 any, M2 any, M2MConnector any](
 	}
 
 	{
-		reflected := reflect.TypeOf(new(M2MConnector)).Elem()
+		reflected := reflect.TypeFor[M2MConnector]()
 
 		field1, ok := reflected.FieldByName(objectFieldName1)
 		if !ok {

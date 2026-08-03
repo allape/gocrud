@@ -88,14 +88,14 @@ func (crud *Crud[T]) docensor(context *gin.Context, db *gorm.DB, record *T, ence
 		return err
 	}
 	if encensor {
-		for i := 0; i < len(censors); i++ {
+		for i := range censors {
 			err = censors[i].Encencor(record)
 			if err != nil {
 				return err
 			}
 		}
 	} else {
-		for i := 0; i < len(censors); i++ {
+		for i := range censors {
 			err = censors[i].Decensor(record)
 			if err != nil {
 				return err
@@ -106,7 +106,7 @@ func (crud *Crud[T]) docensor(context *gin.Context, db *gorm.DB, record *T, ence
 }
 
 func (crud *Crud[T]) decensorList(context *gin.Context, db *gorm.DB, list []T) error {
-	for i := 0; i < len(list); i++ {
+	for i := range list {
 		err := crud.decensor(context, db, &list[i])
 		if err != nil {
 
