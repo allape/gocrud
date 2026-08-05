@@ -1,74 +1,14 @@
 package gocrud
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
-	"net/http"
 	"reflect"
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
-
-var RestCoder = NewDefaultCoder()
-
-type R[T any] struct {
-	Code    Code   `json:"c,omitempty"`
-	Message string `json:"m,omitempty"`
-	Data    T      `json:"d,omitempty"`
-}
-
-func MakeErrorResponse(context *gin.Context, code Code, err any) {
-	message := http.StatusText(http.StatusInternalServerError)
-
-	if err != nil {
-		switch err.(type) {
-		case string:
-			if err != "" {
-				message = err.(string)
-			}
-		case *string:
-			if err == nil && len(*err.(*string)) > 0 {
-				message = *err.(*string)
-			}
-		case error:
-			msg := err.(error).Error()
-			if msg != "" {
-				message = msg
-			}
-		}
-	}
-
-	context.AbortWithStatusJSON(http.StatusOK, R[any]{
-		Code:    Ternary(code == "", RestCoder.InternalServerError(), code),
-		Message: message,
-		Data:    err,
-	})
-}
-
-func MakeOkayResponse[T any](context *gin.Context, code Code, message string, data T) {
-	context.JSON(http.StatusOK, R[T]{
-		Code:    code,
-		Message: message,
-		Data:    data,
-	})
-}
-
-func MakeOkayDataResponse[T any](context *gin.Context, data T) {
-	MakeOkayResponse[T](context, RestCoder.OK(), "", data)
-}
-
-func RecoveryHandler(responseFullError bool) gin.HandlerFunc {
-	return gin.CustomRecovery(func(c *gin.Context, err any) {
-		MakeErrorResponse(
-			c,
-			RestCoder.InternalServerError(),
-			Ternary(responseFullError, err, nil),
-		)
-	})
-}
 
 func Ternary[T any](condition bool, onTrue T, onFalse T) T {
 	if condition {
@@ -167,29 +107,24 @@ func GetJSONFieldNameOf[T any](fields ...string) ([]string, error) {
 	return jsonFieldNames, nil
 }
 
-func GetDatabaseFieldNameOf[T any](db *gorm.DB, fields ...string) ([]string, error) {
-	stmt := &gorm.Statement{DB: db}
-	err := stmt.Parse(new(T))
-	if err != nil {
-		return nil, err
-	}
-
-	dbFields := make([]string, len(fields))
-	for i, field := range fields {
-		dbField := stmt.Schema.LookUpField(field)
-		if dbField == nil {
-			return nil, fmt.Errorf("field %s not found", field)
-		}
-		dbFields[i] = dbField.DBName
-	}
-
-	return dbFields, nil
-}
-
 func IDsJoin(ids []ID, sep string) string {
 	strIds := make([]string, len(ids))
 	for i, id := range ids {
 		strIds[i] = fmt.Sprintf("%d", id)
 	}
 	return strings.Join(strIds, sep)
+}
+
+func SHASum256(src []byte) []byte {
+	mk := sha256.Sum256(src)
+	return mk[:]
+}
+
+func SHASum256FromString(s string) []byte {
+	return SHASum256([]byte(s))
+}
+
+func HexedSHASum256(src []byte) string {
+	//return strings.ToLower(hex.EncodeToString(SHASum256(src)))
+	return hex.EncodeToString(SHASum256(src))
 }

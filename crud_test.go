@@ -525,8 +525,7 @@ func testStartServer(t *testing.T) {
 
 	static := engine.Group("/static")
 	err = NewHttpFileSystem(static, TestDataDir, &HttpFileSystemConfig{
-		AllowOverwrite: true,
-		AllowUpload:    true,
+		AllowUpload: true,
 	})
 	if err != nil {
 		t.Fatal(err)
