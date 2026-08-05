@@ -125,7 +125,7 @@ func TestNewCrudy(t *testing.T) {
 		t.Fatalf("expected an ErrorBaseURLRequired error, but got %v", err)
 	}
 
-	userAddr := "http://127.0.0.1:8080/user"
+	userAddr := "http://127.0.0.1:8021/user"
 
 	crudy, err := NewCrudy[User](userAddr)
 	if err != nil {

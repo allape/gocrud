@@ -40,7 +40,7 @@ func compareFileBytes(filename string, byteArray []byte) (bool, error) {
 }
 
 func TestNewHttpFileSystem(t *testing.T) {
-	const HttpBinding = "127.0.0.1:8081"
+	const HttpBinding = "127.0.0.1:8030"
 
 	engine := gin.New()
 
@@ -109,7 +109,7 @@ func TestNewHttpFileSystem(t *testing.T) {
 }
 
 func TestNewEncryptedHttpFileSystem(t *testing.T) {
-	const HttpBinding = "127.0.0.1:8082"
+	const HttpBinding = "127.0.0.1:8031"
 
 	engine := gin.New()
 
@@ -189,15 +189,7 @@ func TestNewEncryptedHttpFileSystem(t *testing.T) {
 		t.Fatalf("file content is same %s", result.Data.(string))
 	}
 
-	resp, err := http.DefaultClient.Get("http://" + HttpBinding + filename)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	data, err := io.ReadAll(resp.Body)
+	data, err := fetchBytes(http.MethodGet, "http://"+HttpBinding+filename, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if bytes.Compare(data, randomBytes) != 0 {

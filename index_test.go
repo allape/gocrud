@@ -13,7 +13,7 @@ import (
 )
 
 func TestNewSingleHTMLServe(t *testing.T) {
-	const HttpBinding = "127.0.0.1:8082"
+	const HttpBinding = "127.0.0.1:8040"
 
 	err := os.MkdirAll(TestDataDir, 0755)
 	if err != nil {
