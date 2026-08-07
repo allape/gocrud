@@ -169,9 +169,9 @@ func TestNewEncryptedHttpFileSystem(t *testing.T) {
 	err = NewHttpFileSystemController(group, TestDataDir, &HttpFileSystemConfig{
 		AllowUpload:   true,
 		FileMasterKey: masterKey,
-		OnFileReview: func(filename string) (*HttpFile, error) {
+		OnFileReview: func(filename Filename) (*HttpFile, error) {
 			for _, file := range savedFiles {
-				if file.Filename == Filename(filename) {
+				if file.Filename == filename {
 					return file, nil
 				}
 			}
@@ -258,9 +258,9 @@ func testRunEncryptedHttpFileSystem(t *testing.T) {
 	err := NewHttpFileSystemController(engine.Group(""), TestDataDir, &HttpFileSystemConfig{
 		AllowUpload:   true,
 		FileMasterKey: masterKey,
-		OnFileReview: func(filename string) (*HttpFile, error) {
+		OnFileReview: func(filename Filename) (*HttpFile, error) {
 			for _, file := range savedFiles {
-				if file.Filename == Filename(filename) {
+				if file.Filename == filename {
 					return file, nil
 				}
 			}
