@@ -114,7 +114,7 @@ func NewHttpFileSystemController(group *gin.RouterGroup, folder string, config *
 				_ = file.Close()
 			}()
 
-			serveFunc, err := ServeDareContentHandler(file, httpFile)
+			serveFunc, err := NewDareHttpServeFunc(file, httpFile)
 			if err != nil {
 				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 				return
@@ -130,9 +130,9 @@ func NewHttpFileSystemController(group *gin.RouterGroup, folder string, config *
 			return
 		}
 
-		file, err := SaveFileDarelly(
+		file, err := SaveDareFile(
 			context.Request.Body,
-			&SaveFileDarellyConfig{
+			&SaveDareFileConfig{
 				BaseFolder:     folder,
 				Ext:            path.Ext(path.Base(context.Param("filepath"))),
 				Length:         FileSize(context.Request.ContentLength),

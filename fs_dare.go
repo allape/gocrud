@@ -15,7 +15,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-type SaveFileDarellyConfig struct {
+type SaveDareFileConfig struct {
 	BaseFolder     string        // will use cwd when empty
 	Ext            string        // will use .bin when empty
 	Length         FileSize      // will check length of dst file when not 0
@@ -24,7 +24,7 @@ type SaveFileDarellyConfig struct {
 	OnFileDigested func(digest FileDigest) (*HttpFile, error)
 }
 
-func SaveFileDarelly(source io.Reader, config *SaveFileDarellyConfig) (httpFile *HttpFile, err error) {
+func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpFile, err error) {
 	var filename Filename
 	var length FileSize
 	var digest FileDigest
@@ -33,7 +33,7 @@ func SaveFileDarelly(source io.Reader, config *SaveFileDarellyConfig) (httpFile 
 	var fileKey FileKey
 
 	if config == nil {
-		config = &SaveFileDarellyConfig{}
+		config = &SaveDareFileConfig{}
 	}
 
 	if config.BaseFolder == "" {
@@ -255,7 +255,7 @@ func NewDareReader(src io.ReaderAt, fileSize FileSize, fileKey FileKey) (*DareRe
 	}, nil
 }
 
-func ServeDareContentHandler(file io.ReaderAt, httpFile *HttpFile) (http.HandlerFunc, error) {
+func NewDareHttpServeFunc(file io.ReaderAt, httpFile *HttpFile) (http.HandlerFunc, error) {
 	reader, err := NewDareReader(file, httpFile.Length, httpFile.FileKey)
 	if err != nil {
 		return nil, err

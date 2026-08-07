@@ -70,7 +70,7 @@ func TestSaveFileDarelly(t *testing.T) {
 	}
 	plainDataSize := int64(len(plainData))
 
-	httpFile, err := SaveFileDarelly(bytes.NewReader(plainData), &SaveFileDarellyConfig{
+	httpFile, err := SaveDareFile(bytes.NewReader(plainData), &SaveDareFileConfig{
 		BaseFolder: TestDataDir,
 		Length:     FileSize(plainDataSize),
 		MasterKey:  masterKey,
