@@ -2,12 +2,17 @@ package gocrud
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
+	"reflect"
+	"strings"
 	"time"
 
+	"github.com/allape/gogger"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 const (
@@ -20,7 +25,6 @@ var (
 	ErrorUploadNotAllowed           = errors.New("upload not allowed")
 	ErrorFileDigestMismatch         = errors.New("digest mismatch")
 	ErrorFileMasterKeyMustBe32Bytes = errors.New("master key must be 32 bytes")
-	ErrorFileNonceMustBe32Bytes     = errors.New("file nonce must be 32 bytes")
 	ErrorFileKeyProviderIsNil       = errors.New("file key provider is nil")
 )
 
@@ -61,15 +65,15 @@ type HttpFileSystemConfig struct {
 	// DEPRECATED: forced be digested now
 	//EnableDigest bool
 
-	FileMasterKey FileMasterKey
-
-	FileKeyProvider func(filename string) (Filename, FileSize, FileKey)
-	OnFileSaved     func(file *HttpFile)
+	FileMasterKey  FileMasterKey
+	OnFileReview   func(filename Filename) (*HttpFile, error)
+	OnFileDigested func(digest FileDigest) (*HttpFile, error)
+	OnFileSaved    func(file *HttpFile) error
 
 	Coder Coder
 }
 
-func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSystemConfig) error {
+func NewHttpFileSystemController(group *gin.RouterGroup, folder string, config *HttpFileSystemConfig) error {
 	if config == nil {
 		config = &HttpFileSystemConfig{Coder: RestCoder}
 	}
@@ -81,18 +85,22 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 	if config.FileMasterKey == nil {
 		group.Static("", folder)
 	} else {
-		if config.FileKeyProvider == nil {
+		if config.OnFileReview == nil {
 			return ErrorFileKeyProviderIsNil
 		}
 
 		group.GET("/*filepath", func(context *gin.Context) {
-			filename, fileSize, fileKey := config.FileKeyProvider(context.Param("filepath"))
-			if filename == "" || fileSize == 0 || fileKey == nil {
+			httpFile, err := config.OnFileReview(Filename(context.Param("filepath")))
+			if err != nil {
+				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
+				return
+			}
+			if httpFile == nil {
 				MakeErrorResponse(context, config.Coder.NotFound(), http.StatusText(http.StatusNotFound))
 				return
 			}
 
-			filePath := path.Join(folder, string(filename))
+			filePath := path.Join(folder, string(httpFile.Filename))
 			file, err := os.Open(filePath)
 			if err != nil {
 				if os.IsNotExist(err) {
@@ -100,21 +108,19 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 					return
 				}
 				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
+				return
 			}
+			defer func() {
+				_ = file.Close()
+			}()
 
-			reader, err := NewDareReader(file, fileSize, fileKey)
+			serveFunc, err := ServeDareContentHandler(file, httpFile)
 			if err != nil {
 				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 				return
 			}
 
-			//mimeType := mime.TypeByExtension(filepath.Ext(string(filename)))
-			//if mimeType == "" {
-			//	mimeType = "application/octet-stream"
-			//}
-			//context.Header("Content-Type", mimeType)
-
-			http.ServeContent(context.Writer, context.Request, path.Base(string(filename)), time.UnixMilli(0), reader)
+			serveFunc(context.Writer, context.Request)
 		})
 	}
 
@@ -127,11 +133,12 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 		file, err := SaveFileDarelly(
 			context.Request.Body,
 			&SaveFileDarellyConfig{
-				BaseFolder: folder,
-				Ext:        path.Ext(path.Base(context.Param("filepath"))),
-				Length:     FileSize(context.Request.ContentLength),
-				Validigest: FileDigest(context.GetHeader(XFileDigest)),
-				MasterKey:  config.FileMasterKey,
+				BaseFolder:     folder,
+				Ext:            path.Ext(path.Base(context.Param("filepath"))),
+				Length:         FileSize(context.Request.ContentLength),
+				Validigest:     FileDigest(context.GetHeader(XFileDigest)),
+				MasterKey:      config.FileMasterKey,
+				OnFileDigested: config.OnFileDigested,
 			},
 		)
 		if err != nil {
@@ -140,7 +147,11 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 		}
 
 		if config.OnFileSaved != nil {
-			config.OnFileSaved(file)
+			err := config.OnFileSaved(file)
+			if err != nil {
+				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
+				return
+			}
 		}
 
 		context.JSON(http.StatusOK, R[string]{
@@ -153,4 +164,180 @@ func NewHttpFileSystem(group *gin.RouterGroup, folder string, config *HttpFileSy
 	group.PUT("/*filepath", uploadHandler)
 
 	return nil
+}
+
+type HttpFileSystemObjectBase struct {
+	HttpFile
+
+	Filename     Filename         `json:"filename"`
+	Length       FileSize         `json:"length"`
+	Digest       FileDigest       `json:"digest" gorm:"index"`
+	Nonce        FileNonce        `json:"nonce"`
+	NoncedDigest FileNoncedDigest `json:"noncedDigest" gorm:"primaryKey"`
+	FileKey      FileKey          `json:"fileKey"`
+	CreatedAt    time.Time        `json:"createdAt" gorm:"autoCreateTime;<-:create"`
+}
+
+func (obj *HttpFileSystemObjectBase) ToHttpFile() *HttpFile {
+	return &HttpFile{
+		Filename:     obj.Filename,
+		Length:       obj.Length,
+		Digest:       obj.Digest,
+		Nonce:        obj.Nonce,
+		NoncedDigest: obj.NoncedDigest,
+		FileKey:      obj.FileKey,
+	}
+}
+
+func (obj *HttpFileSystemObjectBase) FromHttpFile(file *HttpFile) {
+	obj.Filename = file.Filename
+	obj.Length = file.Length
+	obj.Digest = file.Digest
+	obj.Nonce = file.Nonce
+	obj.NoncedDigest = file.NoncedDigest
+	obj.FileKey = file.FileKey
+}
+
+// NewHttpFileSystemObjectController
+// T must be extended from HttpFileSystemObjectBase
+// baseStructFieldName will be HttpFileSystemObjectBase if empty
+func NewHttpFileSystemObjectController[T any](
+	group *gin.RouterGroup, db *gorm.DB, logger *gogger.Logger,
+	folder string, config *HttpFileSystemConfig,
+	baseStructFieldName string,
+) error {
+	if baseStructFieldName == "" {
+		reflected := reflect.TypeFor[HttpFileSystemObjectBase]()
+		baseStructFieldName = reflected.Name()
+	}
+
+	// precheck
+	{
+		reflected := reflect.TypeFor[T]()
+
+		baseStructField, ok := reflected.FieldByName(baseStructFieldName)
+		if !ok {
+			return fmt.Errorf("baseStructField %s not found", baseStructFieldName)
+		}
+
+		baseStructFieldType := baseStructField.Type
+
+		if baseStructFieldType.Kind() == reflect.Pointer {
+			baseStructFieldType = baseStructFieldType.Elem()
+		}
+
+		if baseStructFieldType.Kind() != reflect.Struct {
+			return fmt.Errorf("baseStructFieldType %s is not a struct", baseStructFieldType)
+		}
+
+		fileSystemObjectBaseType := reflect.TypeFor[HttpFileSystemObjectBase]()
+
+		if !baseStructFieldType.ConvertibleTo(fileSystemObjectBaseType) {
+			return fmt.Errorf(
+				"baseStructField %s should be a type of %s, but got %s",
+				baseStructFieldName,
+				fileSystemObjectBaseType.Name(),
+				baseStructFieldType.Name(),
+			)
+		}
+	}
+
+	err := db.AutoMigrate(new(T))
+	if err != nil {
+		return err
+	}
+
+	getObjectBase := func(record *T) (*HttpFileSystemObjectBase, error) {
+		value := reflect.ValueOf(record).Elem().FieldByName(baseStructFieldName)
+
+		if value.Kind() == reflect.Pointer {
+			value = value.Elem()
+		}
+
+		obj, ok := value.Interface().(HttpFileSystemObjectBase)
+		if !ok {
+			return nil, fmt.Errorf("unexpected type %T", record)
+		}
+
+		return &obj, nil
+	}
+
+	setObjectBase := func(record *T, obj *HttpFileSystemObjectBase) error {
+		value := reflect.ValueOf(record).Elem().FieldByName(baseStructFieldName)
+		if value.Kind() == reflect.Pointer {
+			value = value.Elem()
+		}
+		value.Set(reflect.ValueOf(obj).Elem())
+		return nil
+	}
+
+	config.OnFileReview = func(filename Filename) (*HttpFile, error) {
+		noncedDigest := path.Base(string(filename))
+		dotIndex := strings.Index(noncedDigest, ".")
+		if dotIndex >= 0 {
+			noncedDigest = noncedDigest[:dotIndex]
+		}
+
+		if noncedDigest == "" {
+			return nil, nil
+		}
+
+		var records []T
+		if err = db.Model(new(T)).Where("`nonced_digest` = ?", noncedDigest).Find(&records).Error; err != nil {
+			logger.Error().Printf("OnFileReview: failed to find file object %s:%s:%s, err: %s", folder, filename, noncedDigest, err)
+			return nil, err
+		}
+
+		if len(records) == 0 {
+			return nil, nil
+		}
+
+		obj, err := getObjectBase(&records[0])
+		if err != nil {
+			return nil, err
+		}
+
+		return obj.ToHttpFile(), nil
+	}
+
+	config.OnFileDigested = func(digest FileDigest) (*HttpFile, error) {
+		var records []T
+		if err = db.Model(new(T)).Where("`digest` = ?", digest).Find(&records).Error; err != nil {
+			logger.Error().Printf("OnFileDigested: failed to find file object %s:%s, err: %s", folder, digest, err)
+			return nil, err
+		}
+
+		if len(records) == 0 {
+			return nil, nil
+		}
+
+		obj, err := getObjectBase(&records[0])
+		if err != nil {
+			return nil, err
+		}
+
+		return obj.ToHttpFile(), nil
+	}
+
+	config.OnFileSaved = func(file *HttpFile) error {
+		var record T
+		obj, err := getObjectBase(&record)
+		if err != nil {
+			return err
+		}
+
+		obj.FromHttpFile(file)
+		err = setObjectBase(&record, obj)
+		if err != nil {
+			return err
+		}
+
+		if err := db.Model(&record).Save(&record).Error; err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	return NewHttpFileSystemController(group, folder, config)
 }

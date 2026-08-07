@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/allape/gogger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -39,7 +40,7 @@ func compareFileBytes(filename string, byteArray []byte) (bool, error) {
 	return bytes.Compare(localBs.Bytes(), byteArray) == 0, nil
 }
 
-func TestNewHttpFileSystem(t *testing.T) {
+func TestNewHttpFileSystemController(t *testing.T) {
 	const HttpBinding = "127.0.0.1:8030"
 
 	engine := gin.New()
@@ -48,7 +49,7 @@ func TestNewHttpFileSystem(t *testing.T) {
 
 	var err error
 
-	err = NewHttpFileSystem(group, TestDataDir, &HttpFileSystemConfig{
+	err = NewHttpFileSystemController(group, TestDataDir, &HttpFileSystemConfig{
 		AllowUpload: true,
 	})
 	if err != nil {
@@ -108,70 +109,18 @@ func TestNewHttpFileSystem(t *testing.T) {
 	}
 }
 
-func TestNewEncryptedHttpFileSystem(t *testing.T) {
-	const HttpBinding = "127.0.0.1:8031"
-
-	engine := gin.New()
-
-	group := engine.Group("")
-
-	var err error
-
-	err = NewHttpFileSystem(group, TestDataDir, &HttpFileSystemConfig{
-		AllowUpload:   true,
-		FileMasterKey: masterKey,
-	})
-	if !errors.Is(err, ErrorFileKeyProviderIsNil) {
-		t.Fatalf("expect ErrorFileKeyProviderIsNil, but got %v", err)
-	}
-
-	var dareFiles []*HttpFile
-	var locker sync.Mutex
-
-	err = NewHttpFileSystem(group, TestDataDir, &HttpFileSystemConfig{
-		AllowUpload:   true,
-		FileMasterKey: masterKey,
-		OnFileSaved: func(file *HttpFile) {
-			locker.Lock()
-			defer locker.Unlock()
-
-			t.Logf("new file %v", file)
-
-			dareFiles = append(dareFiles, file)
-		},
-		FileKeyProvider: func(filename string) (Filename, FileSize, FileKey) {
-			for _, dareFile := range dareFiles {
-				if dareFile.Filename == Filename(filename) {
-					return dareFile.Filename, dareFile.Length, dareFile.FileKey
-				}
-			}
-			return "", 0, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	go func() {
-		_ = engine.Run(HttpBinding)
-	}()
-
-	wait(t)
+func testEncryptedHttpFile(t *testing.T, binding string, uriPrefix string) {
+	var result *R[any]
 
 	randomBytes, err := NewRandomBytes(10*MegaByte + rand.Intn(100)*MegaByte)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var url string
-	var result *R[any]
-
-	url = "http://" + HttpBinding + TestFileName
-
 	hash := sha256.Sum256(randomBytes)
 	digest := hex.EncodeToString(hash[:])
 
-	result, err = fetchJSON[any](http.MethodPost, url, bytes.NewReader(randomBytes), map[string]string{
+	result, err = fetchJSON[any](http.MethodPost, "http://"+binding+uriPrefix+TestFileName, bytes.NewReader(randomBytes), map[string]string{
 		XFileDigest: digest,
 	})
 	if err != nil {
@@ -189,7 +138,7 @@ func TestNewEncryptedHttpFileSystem(t *testing.T) {
 		t.Fatalf("file content is same %s", result.Data.(string))
 	}
 
-	data, err := fetchBytes(http.MethodGet, "http://"+HttpBinding+filename, nil, nil)
+	data, err := fetchBytes(http.MethodGet, "http://"+binding+uriPrefix+filename, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if bytes.Compare(data, randomBytes) != 0 {
@@ -197,34 +146,134 @@ func TestNewEncryptedHttpFileSystem(t *testing.T) {
 	}
 }
 
+func TestNewEncryptedHttpFileSystem(t *testing.T) {
+	const HttpBinding = "127.0.0.1:8031"
+
+	engine := gin.New()
+
+	group := engine.Group("")
+
+	var err error
+
+	err = NewHttpFileSystemController(group, TestDataDir, &HttpFileSystemConfig{
+		AllowUpload:   true,
+		FileMasterKey: masterKey,
+	})
+	if !errors.Is(err, ErrorFileKeyProviderIsNil) {
+		t.Fatalf("expect ErrorFileKeyProviderIsNil, but got %v", err)
+	}
+
+	var savedFiles []*HttpFile
+	var locker sync.Mutex
+
+	err = NewHttpFileSystemController(group, TestDataDir, &HttpFileSystemConfig{
+		AllowUpload:   true,
+		FileMasterKey: masterKey,
+		OnFileReview: func(filename string) (*HttpFile, error) {
+			for _, file := range savedFiles {
+				if file.Filename == Filename(filename) {
+					return file, nil
+				}
+			}
+			return nil, nil
+		},
+		OnFileSaved: func(file *HttpFile) error {
+			locker.Lock()
+			defer locker.Unlock()
+
+			t.Logf("new file %v", file)
+
+			savedFiles = append(savedFiles, file)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go func() {
+		_ = engine.Run(HttpBinding)
+	}()
+
+	wait(t)
+
+	testEncryptedHttpFile(t, HttpBinding, "")
+}
+
+type DemoHttpFileObject struct {
+	HttpFileSystemObjectBase
+}
+
+func TestNewHttpFileSystemObjectController(t *testing.T) {
+	const HttpBinding = "127.0.0.1:8032"
+
+	db, engine, err := basicSetup("TestNewHttpFileSystemObjectController.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go func() {
+		_ = engine.Run(HttpBinding)
+	}()
+
+	t.Logf("Server started on %s", HttpBinding)
+
+	wait(t)
+
+	config := &HttpFileSystemConfig{
+		AllowUpload:   true,
+		FileMasterKey: masterKey,
+	}
+
+	err = NewHttpFileSystemObjectController[DemoHttpFileObject](
+		engine.Group(""), db, gogger.New("oss"),
+		TestDataDir, config,
+		"FieldNotExists",
+	)
+	if err == nil {
+		t.Fatal("expect baseStructField not found, but got nil")
+	}
+
+	err = NewHttpFileSystemObjectController[DemoHttpFileObject](
+		engine.Group("/extended"), db, gogger.New("oss:extended"),
+		TestDataDir, config,
+		"HttpFileSystemObjectBase",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testEncryptedHttpFile(t, HttpBinding, "/extended")
+}
+
 //goland:noinspection GoUnusedFunction
-func testEncryptedHttpFileSystem(t *testing.T) {
+func testRunEncryptedHttpFileSystem(t *testing.T) {
 	const HttpBinding = "127.0.0.1:8080"
 
 	engine := gin.New()
 
-	var dareFiles []*HttpFile
+	var savedFiles []*HttpFile
 	var locker sync.Mutex
 
-	err := NewHttpFileSystem(engine.Group(""), TestDataDir, &HttpFileSystemConfig{
+	err := NewHttpFileSystemController(engine.Group(""), TestDataDir, &HttpFileSystemConfig{
 		AllowUpload:   true,
 		FileMasterKey: masterKey,
-		OnFileSaved: func(file *HttpFile) {
+		OnFileReview: func(filename string) (*HttpFile, error) {
+			for _, file := range savedFiles {
+				if file.Filename == Filename(filename) {
+					return file, nil
+				}
+			}
+			return nil, nil
+		},
+		OnFileSaved: func(file *HttpFile) error {
 			locker.Lock()
 			defer locker.Unlock()
 
-			t.Logf("new file %s", file.Filename)
+			t.Logf("new file %v", file)
 
-			dareFiles = append(dareFiles, file)
-		},
-		FileKeyProvider: func(filename string) (Filename, FileSize, FileKey) {
-			for _, dareFile := range dareFiles {
-				if dareFile.Filename == Filename(filename) {
-					t.Logf("get file %v", dareFile.Filename)
-					return dareFile.Filename, dareFile.Length, dareFile.FileKey
-				}
-			}
-			return "", 0, nil
+			savedFiles = append(savedFiles, file)
+			return nil
 		},
 	})
 	if err != nil {

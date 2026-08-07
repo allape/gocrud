@@ -483,10 +483,8 @@ func TestSecretUser(t *testing.T) {
 	}
 }
 
-// TestStartServer used by frontend testing
-//
 //goland:noinspection GoUnusedFunction
-func testStartServer(t *testing.T) {
+func testRunCrudServer(t *testing.T) {
 	db, engine, err := basicSetup("TestStartServer.db")
 	if err != nil {
 		t.Fatal(err)
@@ -524,7 +522,7 @@ func testStartServer(t *testing.T) {
 	}
 
 	static := engine.Group("/static")
-	err = NewHttpFileSystem(static, TestDataDir, &HttpFileSystemConfig{
+	err = NewHttpFileSystemController(static, TestDataDir, &HttpFileSystemConfig{
 		AllowUpload: true,
 	})
 	if err != nil {

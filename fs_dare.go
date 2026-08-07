@@ -5,21 +5,23 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"net/http"
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/minio/sio"
 	"golang.org/x/crypto/hkdf"
 )
 
 type SaveFileDarellyConfig struct {
-	BaseFolder string        // will use cwd when empty
-	Ext        string        // will use .bin when empty
-	Length     FileSize      // will check length of dst file when not 0
-	Validigest FileDigest    // will check file digest when not empty
-	Nonce      FileNonce     // will modify the file digest of returning values
-	MasterKey  FileMasterKey // will encrypt file
+	BaseFolder     string        // will use cwd when empty
+	Ext            string        // will use .bin when empty
+	Length         FileSize      // will check length of dst file when not 0
+	Validigest     FileDigest    // will check file digest when not empty
+	MasterKey      FileMasterKey // will encrypt file
+	OnFileDigested func(digest FileDigest) (*HttpFile, error)
 }
 
 func SaveFileDarelly(source io.Reader, config *SaveFileDarellyConfig) (httpFile *HttpFile, err error) {
@@ -48,27 +50,16 @@ func SaveFileDarelly(source io.Reader, config *SaveFileDarellyConfig) (httpFile 
 		config.Validigest = FileDigest(strings.ToLower(string(config.Validigest)))
 	}
 
-	if config.Nonce != nil {
-		if len(config.Nonce) != 32 {
-			err = ErrorFileNonceMustBe32Bytes
-			return
-		}
-		nonce = config.Nonce
-	}
-
 	if config.MasterKey != nil {
 		if len(config.MasterKey) != 32 {
 			err = ErrorFileMasterKeyMustBe32Bytes
 			return
 		}
 
-		if config.Nonce == nil {
-			config.Nonce = make([]byte, 32)
-			_, err = io.ReadFull(rand.Reader, config.Nonce)
-			if err != nil {
-				return
-			}
-			nonce = config.Nonce
+		nonce = make([]byte, 32)
+		_, err = io.ReadFull(rand.Reader, nonce)
+		if err != nil {
+			return
 		}
 
 		fileKey = make([]byte, 32)
@@ -108,6 +99,18 @@ func SaveFileDarelly(source io.Reader, config *SaveFileDarellyConfig) (httpFile 
 		return
 	}
 
+	if config.OnFileDigested != nil {
+		var exists *HttpFile
+		exists, err = config.OnFileDigested(digest)
+		if err != nil {
+			return
+		}
+		if exists != nil {
+			httpFile = exists
+			return
+		}
+	}
+
 	if nonce == nil {
 		noncedDigest = FileNoncedDigest(digest)
 	} else {
@@ -124,15 +127,28 @@ func SaveFileDarelly(source io.Reader, config *SaveFileDarellyConfig) (httpFile 
 		strDigest+config.Ext,
 	))
 
+	httpFile = &HttpFile{
+		Filename:     filename,
+		Length:       length,
+		Digest:       digest,
+		Nonce:        nonce,
+		NoncedDigest: noncedDigest,
+		FileKey:      fileKey,
+	}
+
 	fullPath := path.Join(config.BaseFolder, string(filename))
 	stat, err := os.Stat(fullPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			// the same file + the same nonce, ignore this file even we are occurring a collision of SHA256
 			return
 		}
-	} else if stat.IsDir() {
-		err = ErrorFileIsDir
+	} else {
+		if stat.IsDir() {
+			err = ErrorFileIsDir
+			return
+		}
+
+		// it is impossible to occur the same hash file after OnFileDigested check
 		return
 	}
 
@@ -192,20 +208,12 @@ func SaveFileDarelly(source io.Reader, config *SaveFileDarellyConfig) (httpFile 
 		}
 	}
 
-	httpFile = &HttpFile{
-		Filename:     filename,
-		Length:       length,
-		Digest:       digest,
-		Nonce:        nonce,
-		NoncedDigest: noncedDigest,
-		FileKey:      fileKey,
-	}
-
 	return
 }
 
 type DareReader struct {
 	io.ReadSeeker
+	io.ReaderAt
 
 	reader       io.ReaderAt
 	currentIndex int64
@@ -230,6 +238,10 @@ func (d *DareReader) Seek(offset int64, whence int) (int64, error) {
 	return d.currentIndex, nil
 }
 
+func (d *DareReader) ReadAt(p []byte, off int64) (n int, err error) {
+	return d.reader.ReadAt(p, off)
+}
+
 func NewDareReader(src io.ReaderAt, fileSize FileSize, fileKey FileKey) (*DareReader, error) {
 	dst, err := sio.DecryptReaderAt(src, sio.Config{Key: fileKey})
 	if err != nil {
@@ -240,5 +252,16 @@ func NewDareReader(src io.ReaderAt, fileSize FileSize, fileKey FileKey) (*DareRe
 		currentIndex: 0,
 		fileSize:     int64(fileSize),
 		reader:       dst,
+	}, nil
+}
+
+func ServeDareContentHandler(file io.ReaderAt, httpFile *HttpFile) (http.HandlerFunc, error) {
+	reader, err := NewDareReader(file, httpFile.Length, httpFile.FileKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		http.ServeContent(writer, request, path.Base(string(httpFile.Filename)), time.UnixMilli(0), reader)
 	}, nil
 }
