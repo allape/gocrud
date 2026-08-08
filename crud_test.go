@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +135,14 @@ func TestNormalUser(t *testing.T) {
 			"name_eq":         KeywordEqual("name", nil),
 			"age_gte":         KeywordStatement("age", OperatorGte, NumericValidate),
 		}),
+		WillGetAll: func(context *gin.Context, db *gorm.DB) *gorm.DB {
+			handledSearch := GetHandledSearch(context)
+			if !slices.Contains(handledSearch, "in_id") {
+				MakeErrorResponse(context, RestCoder.BadRequest(), "in_id can NOT be empty for getting all")
+				return db
+			}
+			return db
+		},
 		WillSave: func(record *User, context *gin.Context, db *gorm.DB) {
 			if strings.Contains(record.Name, "freak") {
 				MakeErrorResponse(context, RestCoder.BadRequest(), "freak is not allowed")
@@ -174,8 +183,14 @@ func TestNormalUser(t *testing.T) {
 	}
 
 	_, err = crudy.All(SearchParams{
+		"in_id":           "1,2,3",
 		"field_not_found": "test",
 	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	_, err = crudy.All(nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -225,7 +240,7 @@ func TestNormalUser(t *testing.T) {
 	}
 
 	// test KeywordStatement
-	all, err = crudy.All(SearchParams{
+	all, err = crudy.Page(1, 10, SearchParams{
 		"age_gte": "10",
 	})
 	if err != nil {
@@ -237,7 +252,7 @@ func TestNormalUser(t *testing.T) {
 	}
 
 	// test KeywordStatement
-	all, err = crudy.All(SearchParams{
+	all, err = crudy.Page(1, 10, SearchParams{
 		"age_gte": "abc",
 	})
 	if err != nil {
@@ -250,7 +265,7 @@ func TestNormalUser(t *testing.T) {
 
 	// test get all with id filter
 	all, err = crudy.All(SearchParams{
-		"id": "1,3,5",
+		"in_id": "1,3,5",
 	})
 	if err != nil {
 		t.Fatal(err)

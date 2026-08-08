@@ -120,14 +120,6 @@ func (crud *Crud[T]) decensorList(context *gin.Context, db *gorm.DB, list []T) e
 
 // region helper
 
-func (crud *Crud[T]) makeOne() *T {
-	return new(T)
-}
-
-func (crud *Crud[T]) makeArray() []T {
-	return make([]T, 0)
-}
-
 func (crud *Crud[T]) handleSearches(context *gin.Context, db *gorm.DB) (*gorm.DB, error) {
 	return HandleSearch(context, db, crud.SearchHandlers)
 }
@@ -153,7 +145,7 @@ func (crud *Crud[T]) error(context *gin.Context, code Code, err any) {
 // region primary functions
 
 func (crud *Crud[T]) all(context *gin.Context) {
-	db := crud.database.Model(crud.makeOne())
+	db := crud.database.Model(new(T))
 
 	db, err := crud.handleSearches(context, db)
 	if err != nil {
@@ -168,7 +160,7 @@ func (crud *Crud[T]) all(context *gin.Context) {
 		}
 	}
 
-	list := crud.makeArray()
+	var list []T
 	err = db.Find(&list).Error
 	if err != nil {
 		crud.logger.Error().Printf("all: failed to find records: %v", err)
@@ -207,7 +199,7 @@ func (crud *Crud[T]) one(context *gin.Context) {
 		}
 	}
 
-	db := crud.database.Model(crud.makeOne())
+	db := crud.database.Model(new(T))
 
 	err := db.Where("id = ?", id).First(&result).Error
 	if err != nil {
@@ -251,8 +243,8 @@ func (crud *Crud[T]) page(context *gin.Context) {
 		pageSize = crud.DefaultPageSize
 	}
 
-	list := crud.makeArray()
-	db := crud.database.Model(crud.makeOne())
+	var list []T
+	db := crud.database.Model(new(T))
 
 	db, err = crud.handleSearches(context, db)
 	if err != nil {
@@ -292,7 +284,7 @@ func (crud *Crud[T]) page(context *gin.Context) {
 }
 
 func (crud *Crud[T]) count(context *gin.Context) {
-	db := crud.database.Model(crud.makeOne())
+	db := crud.database.Model(new(T))
 	db, err := crud.handleSearches(context, db)
 	if err != nil {
 		crud.logger.Error().Printf("count: failed to handle searches: %v", err)
@@ -324,7 +316,7 @@ func (crud *Crud[T]) count(context *gin.Context) {
 }
 
 func (crud *Crud[T]) save(context *gin.Context) {
-	record := crud.makeOne()
+	record := new(T)
 	err := context.ShouldBindJSON(record)
 	if err != nil {
 		crud.error(context, crud.Coder.BadRequest(), "invalid body")
@@ -413,7 +405,7 @@ func Setup[T any](
 	crud.logger = logger
 
 	if crud.logger == nil {
-		name := strings.ToLower(reflect.TypeOf(crud.makeOne()).Elem().Name())
+		name := strings.ToLower(reflect.TypeOf(new(T)).Elem().Name())
 		crud.logger = gogger.New(fmt.Sprintf("crud:%s", name))
 	}
 

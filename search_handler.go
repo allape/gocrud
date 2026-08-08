@@ -18,6 +18,16 @@ type (
 	SearchHandlers = map[string]SearchHandler
 )
 
+const ContextKeyHandledSearch = "gocrud:crud:hanldedsearch"
+
+func GetHandledSearch(context *gin.Context) []string {
+	return context.GetStringSlice(ContextKeyHandledSearch)
+}
+
+func SetHandledSearch(context *gin.Context, handledSearch []string) {
+	context.Set(ContextKeyHandledSearch, handledSearch)
+}
+
 func HandleSearch(context *gin.Context, db *gorm.DB, searchHandlers SearchHandlers) (*gorm.DB, error) {
 	if searchHandlers == nil {
 		return db, nil
@@ -27,14 +37,20 @@ func HandleSearch(context *gin.Context, db *gorm.DB, searchHandlers SearchHandle
 	if err != nil {
 		return nil, err
 	}
+
+	handledSearch := make([]string, 0, len(searches))
+
 	for key, value := range searches {
 		if handler, ok := searchHandlers[key]; ok {
 			db, err = handler(db, value, context)
 			if err != nil {
 				return nil, err
 			}
+			handledSearch = append(handledSearch, key)
 		}
 	}
+
+	SetHandledSearch(context, handledSearch)
 
 	return db, nil
 }

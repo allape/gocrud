@@ -17,6 +17,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// ContextKeyHandledKeywordIn
+// used to mark if inFieldName1 or inFieldName2 has been triggered
+const ContextKeyHandledKeywordIn = "gocrud:m2mc:didkeywordin"
+
 type SetupM2MConnectorControllerOptions[T any] struct {
 	// OnRecordCheck
 	// use context to abort process
@@ -89,14 +93,11 @@ func SetupM2MConnectorController[T any](
 	inFieldName1 := "in_" + jsonFieldName1
 	inFieldName2 := "in_" + jsonFieldName2
 
-	// used to mark if inFieldName1 or inFieldName2 has been triggered
-	const ContextKeyForHandledKeywordIn = "gocrud:m2mc:didkeywordin"
-
 	var handleKeywordIdIn = func(databaseFieldName string) SearchHandler {
 		return func(db *gorm.DB, values []string, context *gin.Context) (*gorm.DB, error) {
 			return KeywordIDIn(databaseFieldName, func(value []ID) []ID {
 				if len(value) > 0 {
-					context.Set(ContextKeyForHandledKeywordIn, true)
+					context.Set(ContextKeyHandledKeywordIn, true)
 				}
 				return value
 			})(db, values, context)
@@ -122,7 +123,7 @@ func SetupM2MConnectorController[T any](
 			return
 		}
 
-		_, ok := context.Get(ContextKeyForHandledKeywordIn)
+		_, ok := context.Get(ContextKeyHandledKeywordIn)
 		if !ok {
 			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("at least one of %s or %s should not be empty", inFieldName1, inFieldName2))
 			return
