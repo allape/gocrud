@@ -38,7 +38,6 @@ func MakeErrorResponse(context *gin.Context, code Code, err any) {
 	context.AbortWithStatusJSON(http.StatusOK, R[any]{
 		Code:    Ternary(code == "", RestCoder.InternalServerError(), code),
 		Message: message,
-		Data:    err,
 	})
 }
 
