@@ -122,6 +122,18 @@ func TestNormalUser(t *testing.T) {
 	userL := gogger.New("controller:user")
 	userCrudL := userL.New("crud")
 
+	_, err = NewDuplicateFieldCheckFunc[User](db, userCrudL, "NameNotExists")
+	if err == nil {
+		t.Fatalf("expecting error, got nil")
+	} else if err.Error() != "field NameNotExists not found" {
+		t.Fatalf("expecting [field NameNotExists not found], got %v", err)
+	}
+
+	NameDuplicateFieldCheck, err := NewDuplicateFieldCheckFunc[User](db, userCrudL, "Name")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	err = Setup(engine.Group("/user"), db, userCrudL, &Crud[User]{
 		EnableGetAll: true,
 		SearchHandlers: BaseSearchHandlers(SearchHandlers{
@@ -149,10 +161,7 @@ func TestNormalUser(t *testing.T) {
 				return
 			}
 
-			if err := DuplicateFieldCheck[User](
-				db, context, userCrudL, record,
-				"Name", "name",
-			); err != nil {
+			if err := NameDuplicateFieldCheck(context, record); err != nil {
 				return
 			}
 		},
@@ -205,6 +214,14 @@ func TestNormalUser(t *testing.T) {
 		t.Fatal("user1's id is not 1")
 	} else if u1.Name != "test1" {
 		t.Fatal("user1's name is not test1")
+	}
+
+	// test name duplicate check
+	_, err = crudy.Save(&User{Name: "test1", Age: 10})
+	if err == nil {
+		t.Fatalf("expect error, got nil")
+	} else if !strings.Contains(err.Error(), " has been taken") {
+		t.Fatalf("expect error to contain 'has been taken', got %v", err)
 	}
 
 	u2, err := crudy.Save(&User{Name: "test2", Age: 9})
