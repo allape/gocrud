@@ -220,10 +220,7 @@ func TestNewHttpFileSystemObjectController(t *testing.T) {
 
 	wait(t)
 
-	config := &HttpFileSystemConfig{
-		AllowUpload:   true,
-		FileMasterKey: masterKey,
-	}
+	config := NewHttpFileSystemObjectConfig[DemoHttpFileObject](true, masterKey)
 
 	err = NewHttpFileSystemObjectController[DemoHttpFileObject](
 		engine.Group(""), db, gogger.New("oss"),
@@ -244,6 +241,25 @@ func TestNewHttpFileSystemObjectController(t *testing.T) {
 	}
 
 	testEncryptedHttpFile(t, HttpBinding, "/extended")
+}
+
+func TestNewHttpFileSystemObjectHandler(t *testing.T) {
+	db, _, err := basicSetup("TestNewHttpFileSystemObjectHandler.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	handler, err := NewHttpFileSystemObjectHandler[DemoHttpFileObject](
+		db, gogger.New("hfso:handler"),
+		TestDataDir, masterKey, "",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("%v", handler.BaseFolder)
+
+	// TODO test
 }
 
 //goland:noinspection GoUnusedFunction

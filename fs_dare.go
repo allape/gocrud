@@ -21,7 +21,7 @@ type SaveDareFileConfig struct {
 	Length         FileSize      // will check length of dst file when not 0
 	Validigest     FileDigest    // will check file digest when not empty
 	MasterKey      FileMasterKey // will encrypt file
-	OnFileDigested func(digest FileDigest) (*HttpFile, error)
+	OnFileDigested func(digest FileDigest, noncedDigest FileNoncedDigest) (*HttpFile, error)
 }
 
 func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpFile, err error) {
@@ -99,9 +99,16 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 		return
 	}
 
+	if nonce == nil {
+		noncedDigest = FileNoncedDigest(digest)
+	} else {
+		hasher.Write(nonce)
+		noncedDigest = FileNoncedDigest(strings.ToLower(hex.EncodeToString(hasher.Sum(nil))))
+	}
+
 	if config.OnFileDigested != nil {
 		var exists *HttpFile
-		exists, err = config.OnFileDigested(digest)
+		exists, err = config.OnFileDigested(digest, noncedDigest)
 		if err != nil {
 			return
 		}
@@ -109,13 +116,6 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 			httpFile = exists
 			return
 		}
-	}
-
-	if nonce == nil {
-		noncedDigest = FileNoncedDigest(digest)
-	} else {
-		hasher.Write(nonce)
-		noncedDigest = FileNoncedDigest(strings.ToLower(hex.EncodeToString(hasher.Sum(nil))))
 	}
 
 	strDigest := string(noncedDigest)
@@ -214,10 +214,18 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 type DareReader struct {
 	io.ReadSeeker
 	io.ReaderAt
+	io.Closer
 
 	reader       io.ReaderAt
 	currentIndex int64
 	fileSize     int64
+}
+
+func (d *DareReader) Close() error {
+	if closer, ok := d.reader.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
 }
 
 func (d *DareReader) Read(p []byte) (n int, err error) {
@@ -260,6 +268,10 @@ func NewDareHttpServeFunc(file io.ReaderAt, httpFile *HttpFile) (http.HandlerFun
 	if err != nil {
 		return nil, err
 	}
+
+	defer func() {
+		_ = reader.Close()
+	}()
 
 	return func(writer http.ResponseWriter, request *http.Request) {
 		http.ServeContent(writer, request, path.Base(string(httpFile.Filename)), time.UnixMilli(0), reader)
