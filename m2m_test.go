@@ -25,7 +25,7 @@ func TestSetupM2MConnectorController(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var binding = "127.0.0.1:8010"
+	var binding = address.m2m.NewAddress(1)
 	var addr = "http://" + binding
 
 	go func() {
@@ -305,7 +305,7 @@ func TestNewM2MConnectorHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var binding = "127.0.0.1:8011"
+	var binding = address.m2m.NewAddress(0)
 	var addr = "http://" + binding
 
 	go func() {

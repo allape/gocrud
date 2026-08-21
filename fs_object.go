@@ -34,7 +34,7 @@ func (obj *HttpFileSystemObjectBase) ToHttpFile() *HttpFile {
 	return &HttpFile{
 		Filename:     obj.Filename,
 		Length:       obj.Length,
-		Digest:       obj.Digest,
+		Digest:       FileDigest(obj.NoncedDigest), //Digest:       obj.Digest,
 		Nonce:        obj.Nonce,
 		NoncedDigest: obj.NoncedDigest,
 		FileKey:      obj.FileKey,
@@ -44,7 +44,8 @@ func (obj *HttpFileSystemObjectBase) ToHttpFile() *HttpFile {
 func (obj *HttpFileSystemObjectBase) FromHttpFile(file *HttpFile) {
 	obj.Filename = file.Filename
 	obj.Length = file.Length
-	obj.Digest = file.Digest
+	//obj.Digest = file.Digest
+	obj.Digest = FileDigest(file.NoncedDigest)
 	obj.Nonce = file.Nonce
 	obj.NoncedDigest = file.NoncedDigest
 	obj.FileKey = file.FileKey

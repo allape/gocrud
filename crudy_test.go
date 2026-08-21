@@ -47,7 +47,7 @@ func TestMakeJSONRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var binding = "127.0.0.1:8020"
+	var binding = address.crudy.NewAddress(0)
 	var addr = "http://" + binding
 
 	go func() {
@@ -125,7 +125,7 @@ func TestNewCrudy(t *testing.T) {
 		t.Fatalf("expected an ErrorBaseURLRequired error, but got %v", err)
 	}
 
-	userAddr := "http://127.0.0.1:8021/user"
+	userAddr := "http://" + address.crudy.NewAddress(0) + "/user"
 
 	crudy, err := NewCrudy[User](userAddr)
 	if err != nil {

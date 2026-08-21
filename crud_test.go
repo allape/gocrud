@@ -170,7 +170,7 @@ func TestNormalUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var binding = "127.0.0.1:8001"
+	var binding = address.crud.NewAddress(1)
 	var addr = "http://" + binding
 
 	go func() {
@@ -385,7 +385,7 @@ func TestHardDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var binding = "127.0.0.1:8002"
+	var binding = address.crud.NewAddress(2)
 	var addr = "http://" + binding
 
 	go func() {
@@ -447,7 +447,7 @@ func TestSecretUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var binding = "127.0.0.1:8003"
+	var binding = address.crud.NewAddress(3)
 	var addr = "http://" + binding
 
 	go func() {
@@ -562,7 +562,7 @@ func testRunCrudServer(t *testing.T) {
 	}
 
 	go func() {
-		_ = engine.Run("127.0.0.1:8080")
+		_ = engine.Run(address.crud.NewAddress(0))
 	}()
 
 	Wait4CtrlC()
