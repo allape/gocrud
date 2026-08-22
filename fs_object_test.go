@@ -66,6 +66,7 @@ func TestNewEncryptedHttpFileSystem(t *testing.T) {
 	err = NewHttpFileSystemController(group, TestDataDir, &HttpFileSystemConfig{
 		AllowUpload:   true,
 		FileMasterKey: masterKey,
+		FileHashSalt:  hashSalt,
 	})
 	if !errors.Is(err, ErrorFileKeyProviderIsNil) {
 		t.Fatalf("expect ErrorFileKeyProviderIsNil, but got %v", err)
@@ -77,9 +78,10 @@ func TestNewEncryptedHttpFileSystem(t *testing.T) {
 	err = NewHttpFileSystemController(group, TestDataDir, &HttpFileSystemConfig{
 		AllowUpload:   true,
 		FileMasterKey: masterKey,
-		OnFileReview: func(filename Filename) (*HttpFile, error) {
+		FileHashSalt:  hashSalt,
+		OnFileReview: func(filename FileName) (*HttpFile, error) {
 			for _, file := range savedFiles {
-				if file.Filename == filename {
+				if file.Name == filename {
 					return file, nil
 				}
 			}
@@ -128,7 +130,7 @@ func TestNewHttpFileSystemObjectController(t *testing.T) {
 
 	wait(t)
 
-	config := NewHttpFileSystemObjectConfig[DemoHttpFileObject](true, masterKey)
+	config := NewHttpFileSystemObjectConfig[DemoHttpFileObject](true, masterKey, hashSalt)
 
 	err = NewHttpFileSystemObjectController[DemoHttpFileObject](
 		engine.Group(""), db, gogger.New("oss"),
@@ -159,7 +161,7 @@ func TestNewHttpFileSystemObjectHandler(t *testing.T) {
 
 	handler, err := NewHttpFileSystemObjectHandler[DemoHttpFileObject](
 		db, gogger.New("hfso:handler"),
-		TestDataDir, masterKey, "",
+		TestDataDir, masterKey, hashSalt, "",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -182,13 +184,13 @@ func TestNewHttpFileSystemObjectHandler(t *testing.T) {
 
 	t.Logf("%v", httpFile)
 
-	_, err = os.Stat(path.Join(TestDataDir, string(httpFile.Filename)))
+	_, err = os.Stat(path.Join(TestDataDir, string(httpFile.Name)))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	buffer := bytes.NewBuffer(nil)
-	reader, err := handler.NewReader(string(httpFile.Filename))
+	reader, err := handler.NewReader(string(httpFile.Name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,9 +216,10 @@ func testRunEncryptedHttpFileSystem(t *testing.T) {
 	err := NewHttpFileSystemController(engine.Group(""), TestDataDir, &HttpFileSystemConfig{
 		AllowUpload:   true,
 		FileMasterKey: masterKey,
-		OnFileReview: func(filename Filename) (*HttpFile, error) {
+		FileHashSalt:  hashSalt,
+		OnFileReview: func(filename FileName) (*HttpFile, error) {
 			for _, file := range savedFiles {
-				if file.Filename == filename {
+				if file.Name == filename {
 					return file, nil
 				}
 			}

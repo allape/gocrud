@@ -20,40 +20,40 @@ import (
 type HttpFileSystemObjectBase struct {
 	HttpFile
 
-	Filename     Filename         `json:"filename"`
-	Length       FileSize         `json:"length"`
-	Digest       FileDigest       `json:"digest" gorm:"-"` // This hash should not be saved
-	Nonce        FileNonce        `json:"nonce"`
-	NoncedDigest FileNoncedDigest `json:"noncedDigest" gorm:"primaryKey"`
-	FileKey      FileKey          `json:"fileKey"`
+	Filename    FileName        `json:"filename"`
+	Size        FileSize        `json:"size"`
+	Digest      FileDigest      `json:"digest" gorm:"-"` // This hash should not be saved, and will always be empty
+	Nonce       FileNonce       `json:"nonce"`
+	SaltyDigest FileSaltyDigest `json:"saltyDigest" gorm:"primaryKey"`
+	FileKey     FileKey         `json:"fileKey"`
 
 	CreatedAt time.Time `json:"createdAt" gorm:"autoCreateTime;<-:create"`
 }
 
 func (obj *HttpFileSystemObjectBase) ToHttpFile() *HttpFile {
 	return &HttpFile{
-		Filename:     obj.Filename,
-		Length:       obj.Length,
-		Digest:       FileDigest(obj.NoncedDigest), //Digest:       obj.Digest,
-		Nonce:        obj.Nonce,
-		NoncedDigest: obj.NoncedDigest,
-		FileKey:      obj.FileKey,
+		Name: obj.Filename,
+		Size: obj.Size,
+		//Digest:      obj.Digest,
+		Nonce:       obj.Nonce,
+		SaltyDigest: obj.SaltyDigest,
+		FileKey:     obj.FileKey,
 	}
 }
 
 func (obj *HttpFileSystemObjectBase) FromHttpFile(file *HttpFile) {
-	obj.Filename = file.Filename
-	obj.Length = file.Length
+	obj.Filename = file.Name
+	obj.Size = file.Size
 	//obj.Digest = file.Digest
-	obj.Digest = FileDigest(file.NoncedDigest)
 	obj.Nonce = file.Nonce
-	obj.NoncedDigest = file.NoncedDigest
+	obj.SaltyDigest = file.SaltyDigest
 	obj.FileKey = file.FileKey
 }
 
 type HttpFileSystemObjectConfig[T any] struct {
 	AllowUpload   bool
 	FileMasterKey FileMasterKey
+	FileHashSalt  FileHashSalt
 }
 
 // NewHttpFileSystemConfig
@@ -71,6 +71,7 @@ func (h *HttpFileSystemObjectConfig[T]) NewHttpFileSystemConfig(
 	config := &HttpFileSystemConfig{
 		AllowUpload:   baseConfig.AllowUpload,
 		FileMasterKey: baseConfig.FileMasterKey,
+		FileHashSalt:  baseConfig.FileHashSalt,
 	}
 
 	if baseStructFieldName == "" {
@@ -154,20 +155,20 @@ func (h *HttpFileSystemObjectConfig[T]) NewHttpFileSystemConfig(
 		return nil
 	}
 
-	config.OnFileReview = func(filename Filename) (*HttpFile, error) {
-		noncedDigest := path.Base(string(filename))
-		dotIndex := strings.Index(noncedDigest, ".")
+	config.OnFileReview = func(filenameOrSaltyDigest FileName) (*HttpFile, error) {
+		saltyDigest := path.Base(string(filenameOrSaltyDigest))
+		dotIndex := strings.Index(saltyDigest, ".")
 		if dotIndex >= 0 {
-			noncedDigest = noncedDigest[:dotIndex]
+			saltyDigest = saltyDigest[:dotIndex]
 		}
 
-		if noncedDigest == "" {
+		if saltyDigest == "" {
 			return nil, nil
 		}
 
 		var records []T
-		if err = db.Model(new(T)).Where("`nonced_digest` = ?", noncedDigest).Find(&records).Error; err != nil {
-			logger.Error().Printf("OnFileReview: failed to find file object %s:%s:%s, err: %s", folder, filename, noncedDigest, err)
+		if err = db.Model(new(T)).Where("`salty_digest` = ?", saltyDigest).Find(&records).Error; err != nil {
+			logger.Error().Printf("OnFileReview: failed to find file object %s:%s:%s, err: %s", folder, filenameOrSaltyDigest, saltyDigest, err)
 			return nil, err
 		}
 
@@ -183,10 +184,10 @@ func (h *HttpFileSystemObjectConfig[T]) NewHttpFileSystemConfig(
 		return obj.ToHttpFile(), nil
 	}
 
-	config.OnFileDigested = func(_ FileDigest, noncedDigest FileNoncedDigest) (*HttpFile, error) {
+	config.OnFileDigested = func(_ FileDigest, saltyDigest FileSaltyDigest) (*HttpFile, error) {
 		var records []T
-		if err = db.Model(new(T)).Where("`nonced_digest` = ?", noncedDigest).Find(&records).Error; err != nil {
-			logger.Error().Printf("OnFileDigested: failed to find file object %s:%s, err: %s", folder, noncedDigest, err)
+		if err = db.Model(new(T)).Where("`salty_digest` = ?", saltyDigest).Find(&records).Error; err != nil {
+			logger.Error().Printf("OnFileDigested: failed to find file object %s:%s, err: %s", folder, saltyDigest, err)
 			return nil, err
 		}
 
@@ -222,10 +223,11 @@ func (h *HttpFileSystemObjectConfig[T]) NewHttpFileSystemConfig(
 	return config, nil
 }
 
-func NewHttpFileSystemObjectConfig[T any](allowUpload bool, fileMasterKey FileMasterKey) *HttpFileSystemObjectConfig[T] {
+func NewHttpFileSystemObjectConfig[T any](allowUpload bool, masterKey FileMasterKey, salt FileHashSalt) *HttpFileSystemObjectConfig[T] {
 	return &HttpFileSystemObjectConfig[T]{
 		AllowUpload:   allowUpload,
-		FileMasterKey: fileMasterKey,
+		FileMasterKey: masterKey,
+		FileHashSalt:  salt,
 	}
 }
 
@@ -256,7 +258,7 @@ type HttpFileSystemObjectHandler struct {
 }
 
 func (h *HttpFileSystemObjectHandler) Open(digestOrFilename string) (*os.File, *HttpFile, error) {
-	httpFile, err := h.Config.OnFileReview(Filename(digestOrFilename))
+	httpFile, err := h.Config.OnFileReview(FileName(digestOrFilename))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -264,7 +266,7 @@ func (h *HttpFileSystemObjectHandler) Open(digestOrFilename string) (*os.File, *
 		return nil, nil, HttpFileSystemObjectNotFoundError
 	}
 
-	filePath := path.Join(h.BaseFolder, string(httpFile.Filename))
+	filePath := path.Join(h.BaseFolder, string(httpFile.Name))
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, nil, err
@@ -279,7 +281,7 @@ func (h *HttpFileSystemObjectHandler) NewReader(digestOrFilename string) (*DareR
 		return nil, err
 	}
 
-	return NewDareReader(file, httpFile.Length, httpFile.FileKey)
+	return NewDareReader(file, httpFile.Size, httpFile.FileKey)
 }
 
 func (h *HttpFileSystemObjectHandler) NewServeFunc(digestOrFilename string) (http.HandlerFunc, error) {
@@ -297,7 +299,7 @@ func (h *HttpFileSystemObjectHandler) Save(reader io.Reader, ext string, size Fi
 		&SaveDareFileConfig{
 			BaseFolder:     h.BaseFolder,
 			Ext:            ext,
-			Length:         size,
+			Size:           size,
 			Validigest:     validigest,
 			MasterKey:      h.Config.FileMasterKey,
 			OnFileDigested: h.Config.OnFileDigested,
@@ -319,10 +321,12 @@ func (h *HttpFileSystemObjectHandler) Save(reader io.Reader, ext string, size Fi
 
 func NewHttpFileSystemObjectHandler[T any](
 	db *gorm.DB, logger *gogger.Logger,
-	folder string, masterKey FileMasterKey,
+	folder string,
+	masterKey FileMasterKey,
+	salt FileHashSalt,
 	baseStructFieldName string,
 ) (*HttpFileSystemObjectHandler, error) {
-	baseConfig := NewHttpFileSystemObjectConfig[T](true, masterKey)
+	baseConfig := NewHttpFileSystemObjectConfig[T](true, masterKey, salt)
 	config, err := baseConfig.NewHttpFileSystemConfig(db, logger, folder, baseStructFieldName)
 	if err != nil {
 		return nil, err

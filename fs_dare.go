@@ -18,19 +18,22 @@ import (
 type SaveDareFileConfig struct {
 	BaseFolder     string        // will use cwd when empty
 	Ext            string        // will use .bin when empty
-	Length         FileSize      // will check length of dst file when not 0
+	Size           FileSize      // will check the size of dst file when not 0
 	Validigest     FileDigest    // will check file digest when not empty
-	MasterKey      FileMasterKey // will encrypt file
-	OnFileDigested func(digest FileDigest, noncedDigest FileNoncedDigest) (*HttpFile, error)
+	HashSalt       FileHashSalt  // salt for file hash
+	MasterKey      FileMasterKey // encryption password for the file
+	OnFileDigested func(digest FileDigest, saltyDigest FileSaltyDigest) (*HttpFile, error)
 }
 
 func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpFile, err error) {
-	var filename Filename
-	var length FileSize
-	var digest FileDigest
-	var nonce FileNonce
-	var noncedDigest FileNoncedDigest
-	var fileKey FileKey
+	var (
+		name        FileName
+		size        FileSize
+		digest      FileDigest
+		nonce       FileNonce
+		saltyDigest FileSaltyDigest
+		fileKey     FileKey
+	)
 
 	if config == nil {
 		config = &SaveDareFileConfig{}
@@ -83,12 +86,12 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 
 	mw := io.MultiWriter(tmpFile, hasher)
 
-	tmpLength, err := io.Copy(mw, source)
+	tmpSize, err := io.Copy(mw, source)
 	if err != nil {
 		return
 	}
-	length = FileSize(tmpLength)
-	if config.Length > 0 && length != config.Length {
+	size = FileSize(tmpSize)
+	if config.Size > 0 && size != config.Size {
 		err = ErrorIncompleteWrite
 		return
 	}
@@ -99,16 +102,16 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 		return
 	}
 
-	if nonce == nil {
-		noncedDigest = FileNoncedDigest(digest)
+	if len(config.HashSalt) == 0 {
+		saltyDigest = FileSaltyDigest(digest)
 	} else {
-		hasher.Write(nonce)
-		noncedDigest = FileNoncedDigest(strings.ToLower(hex.EncodeToString(hasher.Sum(nil))))
+		hasher.Write(config.HashSalt)
+		saltyDigest = FileSaltyDigest(strings.ToLower(hex.EncodeToString(hasher.Sum(nil))))
 	}
 
 	if config.OnFileDigested != nil {
 		var exists *HttpFile
-		exists, err = config.OnFileDigested(digest, noncedDigest)
+		exists, err = config.OnFileDigested(digest, saltyDigest)
 		if err != nil {
 			return
 		}
@@ -118,9 +121,9 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 		}
 	}
 
-	strDigest := string(noncedDigest)
+	strDigest := string(saltyDigest)
 
-	filename = Filename(path.Join(
+	name = FileName(path.Join(
 		"/",
 		strDigest[:2],
 		strDigest[2:4],
@@ -128,15 +131,15 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 	))
 
 	httpFile = &HttpFile{
-		Filename:     filename,
-		Length:       length,
-		Digest:       digest,
-		Nonce:        nonce,
-		NoncedDigest: noncedDigest,
-		FileKey:      fileKey,
+		Name:        name,
+		Size:        size,
+		Digest:      digest,
+		Nonce:       nonce,
+		SaltyDigest: saltyDigest,
+		FileKey:     fileKey,
 	}
 
-	fullPath := path.Join(config.BaseFolder, string(filename))
+	fullPath := path.Join(config.BaseFolder, string(name))
 	stat, err := os.Stat(fullPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -188,9 +191,9 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 			return
 		}
 
-		// n should be larger than tmpLength,
+		// n should be larger than tmpSize,
 		// sio.Encrypt should increase the file size ~0.05%
-		if n < tmpLength {
+		if n < tmpSize {
 			err = ErrorIncompleteWrite
 			return
 		}
@@ -201,7 +204,7 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 			return
 		}
 
-		if tmpLength != n {
+		if tmpSize != n {
 			_ = os.Remove(fullPath)
 			err = ErrorIncompleteWrite
 			return
@@ -264,7 +267,7 @@ func NewDareReader(src io.ReaderAt, fileSize FileSize, fileKey FileKey) (*DareRe
 }
 
 func NewDareHttpServeFunc(file io.ReaderAt, httpFile *HttpFile) (http.HandlerFunc, error) {
-	reader, err := NewDareReader(file, httpFile.Length, httpFile.FileKey)
+	reader, err := NewDareReader(file, httpFile.Size, httpFile.FileKey)
 	if err != nil {
 		return nil, err
 	}
@@ -274,6 +277,6 @@ func NewDareHttpServeFunc(file io.ReaderAt, httpFile *HttpFile) (http.HandlerFun
 	}()
 
 	return func(writer http.ResponseWriter, request *http.Request) {
-		http.ServeContent(writer, request, path.Base(string(httpFile.Filename)), time.UnixMilli(0), reader)
+		http.ServeContent(writer, request, path.Base(string(httpFile.Name)), time.UnixMilli(0), reader)
 	}, nil
 }
