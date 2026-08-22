@@ -272,11 +272,10 @@ func NewDareHttpServeFunc(file io.ReaderAt, httpFile *HttpFile) (http.HandlerFun
 		return nil, err
 	}
 
-	defer func() {
-		_ = reader.Close()
-	}()
-
 	return func(writer http.ResponseWriter, request *http.Request) {
+		defer func() {
+			_ = reader.Close()
+		}()
 		http.ServeContent(writer, request, path.Base(string(httpFile.Name)), time.UnixMilli(0), reader)
 	}, nil
 }
