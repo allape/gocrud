@@ -14,6 +14,7 @@ import (
 	censored "github.com/allape/gocensored"
 	"github.com/allape/gogger"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/text/unicode/norm"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -522,12 +523,20 @@ func testRunCrudServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	nameDuplicateChecker, err := NewDuplicateFieldCheckFunc[User](db, gogger.New("user:name:dupchk"), "Name")
+
 	err = Setup(engine.Group("/user"), db, nil, &Crud[User]{
 		EnableGetAll: true,
 		SearchHandlers: BaseSearchHandlers(SearchHandlers{
 			"like_name": KeywordLike("name", nil),
 			"name":      KeywordEqual("name", nil),
 		}),
+		WillSave: func(record *User, context *gin.Context, db *gorm.DB) {
+			record.Name = norm.NFC.String(strings.TrimSpace(record.Name))
+			if err := nameDuplicateChecker(context, record); err != nil {
+				return
+			}
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
