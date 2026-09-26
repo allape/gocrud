@@ -51,7 +51,7 @@ func TestNewSingleHTMLServe(t *testing.T) {
 	wait(t)
 
 	//goland:noinspection HttpUrlsUsage
-	url := fmt.Sprintf("http://%s/ui/index.html", HttpBinding)
+	url := fmt.Sprintf("http://%s/ui/", HttpBinding)
 
 	bs, err := fetchBytes(http.MethodGet, url, nil, nil)
 	if err != nil {
