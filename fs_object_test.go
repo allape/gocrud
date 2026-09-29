@@ -115,7 +115,7 @@ type DemoHttpFileObject struct {
 }
 
 func TestNewHttpFileSystemObjectController(t *testing.T) {
-	var HttpBinding = address.fsObject.NewAddress(1)
+	var HttpBinding = address.fsObject.NewAddress(2)
 
 	db, engine, err := basicSetup("TestNewHttpFileSystemObjectController.db")
 	if err != nil {
@@ -206,7 +206,7 @@ func TestNewHttpFileSystemObjectHandler(t *testing.T) {
 
 //goland:noinspection GoUnusedFunction
 func testRunEncryptedHttpFileSystem(t *testing.T) {
-	var HttpBinding = address.fsObject.NewAddress(2)
+	var HttpBinding = address.fsObject.NewAddress(3)
 
 	engine := gin.New()
 

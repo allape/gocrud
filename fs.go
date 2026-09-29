@@ -102,7 +102,13 @@ func NewHttpFileSystemController(group *gin.RouterGroup, folder string, config *
 				_ = file.Close()
 			}()
 
-			serveFunc, err := NewDareHttpServeFunc(file, httpFile)
+			stat, err := file.Stat()
+			if err != nil {
+				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
+				return
+			}
+
+			serveFunc, err := NewDareHttpServeFunc(file, httpFile, stat.ModTime())
 			if err != nil {
 				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
 				return

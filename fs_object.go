@@ -290,7 +290,12 @@ func (h *HttpFileSystemObjectHandler) NewServeFunc(digestOrFilename string) (htt
 		return nil, err
 	}
 
-	return NewDareHttpServeFunc(file, httpFile)
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewDareHttpServeFunc(file, httpFile, stat.ModTime())
 }
 
 func (h *HttpFileSystemObjectHandler) Save(reader io.Reader, ext string, size FileSize, validigest FileDigest) (*HttpFile, error) {

@@ -266,7 +266,7 @@ func NewDareReader(src io.ReaderAt, fileSize FileSize, fileKey FileKey) (*DareRe
 	}, nil
 }
 
-func NewDareHttpServeFunc(file io.ReaderAt, httpFile *HttpFile) (http.HandlerFunc, error) {
+func NewDareHttpServeFunc(file io.ReaderAt, httpFile *HttpFile, modtime time.Time) (http.HandlerFunc, error) {
 	reader, err := NewDareReader(file, httpFile.Size, httpFile.FileKey)
 	if err != nil {
 		return nil, err
@@ -276,6 +276,6 @@ func NewDareHttpServeFunc(file io.ReaderAt, httpFile *HttpFile) (http.HandlerFun
 		defer func() {
 			_ = reader.Close()
 		}()
-		http.ServeContent(writer, request, path.Base(string(httpFile.Name)), time.UnixMilli(0), reader)
+		http.ServeContent(writer, request, path.Base(string(httpFile.Name)), modtime, reader)
 	}, nil
 }
