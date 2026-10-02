@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -123,7 +123,7 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 
 	strDigest := string(saltyDigest)
 
-	name = FileName(path.Join(
+	name = FileName(filepath.Join(
 		"/",
 		strDigest[:2],
 		strDigest[2:4],
@@ -139,7 +139,7 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 		FileKey:     fileKey,
 	}
 
-	fullPath := path.Join(config.BaseFolder, string(name))
+	fullPath := filepath.Join(config.BaseFolder, string(name))
 	stat, err := os.Stat(fullPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -155,7 +155,7 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 		return
 	}
 
-	parentDir := path.Dir(fullPath)
+	parentDir := filepath.Dir(fullPath)
 	if _, err = os.Stat(parentDir); err != nil {
 		if os.IsNotExist(err) {
 			err = os.MkdirAll(parentDir, os.ModePerm)
@@ -276,6 +276,6 @@ func NewDareHttpServeFunc(file io.ReaderAt, httpFile *HttpFile, modtime time.Tim
 		defer func() {
 			_ = reader.Close()
 		}()
-		http.ServeContent(writer, request, path.Base(string(httpFile.Name)), modtime, reader)
+		http.ServeContent(writer, request, filepath.Base(string(httpFile.Name)), modtime, reader)
 	}, nil
 }

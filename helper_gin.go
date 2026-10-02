@@ -41,6 +41,10 @@ func MakeErrorResponse(context *gin.Context, code Code, err any) {
 	})
 }
 
+func MakeHttpErrorResponse(context *gin.Context, statusCode int) {
+	MakeErrorResponse(context, RestCoder.FromStatus(statusCode), http.StatusText(statusCode))
+}
+
 func MakeOkayResponse[T any](context *gin.Context, code Code, message string, data T) {
 	context.JSON(http.StatusOK, R[T]{
 		Code:    code,
@@ -51,6 +55,12 @@ func MakeOkayResponse[T any](context *gin.Context, code Code, message string, da
 
 func MakeOkayDataResponse[T any](context *gin.Context, data T) {
 	MakeOkayResponse[T](context, RestCoder.OK(), "", data)
+}
+
+func AddNoCacheHeaders(context *gin.Context) {
+	context.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	context.Header("Pragma", "no-cache")
+	context.Header("Expires", "0")
 }
 
 func RecoveryHandler(responseFullError bool) gin.HandlerFunc {

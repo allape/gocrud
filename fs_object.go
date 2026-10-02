@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -156,7 +156,7 @@ func (h *HttpFileSystemObjectConfig[T]) NewHttpFileSystemConfig(
 	}
 
 	config.OnFileReview = func(filenameOrSaltyDigest FileName) (*HttpFile, error) {
-		saltyDigest := path.Base(string(filenameOrSaltyDigest))
+		saltyDigest := filepath.Base(string(filenameOrSaltyDigest))
 		dotIndex := strings.Index(saltyDigest, ".")
 		if dotIndex >= 0 {
 			saltyDigest = saltyDigest[:dotIndex]
@@ -266,7 +266,7 @@ func (h *HttpFileSystemObjectHandler) Open(digestOrFilename string) (*os.File, *
 		return nil, nil, HttpFileSystemObjectNotFoundError
 	}
 
-	filePath := path.Join(h.BaseFolder, string(httpFile.Name))
+	filePath := filepath.Join(h.BaseFolder, string(httpFile.Name))
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, nil, err

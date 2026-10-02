@@ -9,7 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -39,7 +39,7 @@ func testEncryptedHttpFile(t *testing.T, binding string, uriPrefix string) {
 
 	filename := result.Data.(string)
 
-	same, err := compareFileBytes(path.Join(TestDataDir, result.Data.(string)), randomBytes)
+	same, err := compareFileBytes(filepath.Join(TestDataDir, result.Data.(string)), randomBytes)
 	if err != nil {
 		t.Fatal(err)
 	} else if same {
@@ -184,7 +184,7 @@ func TestNewHttpFileSystemObjectHandler(t *testing.T) {
 
 	t.Logf("%v", httpFile)
 
-	_, err = os.Stat(path.Join(TestDataDir, string(httpFile.Name)))
+	_, err = os.Stat(filepath.Join(TestDataDir, string(httpFile.Name)))
 	if err != nil {
 		t.Fatal(err)
 	}

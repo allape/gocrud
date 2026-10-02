@@ -9,7 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -101,7 +101,7 @@ func TestNewHttpFileSystemController(t *testing.T) {
 		t.Fatalf("response status is not ok, got %s", result.Code)
 	}
 
-	if ok, err := compareFileBytes(path.Join(TestDataDir, digest[:2], digest[2:4], digest+".mybin"), randomBytes); !ok || err != nil {
+	if ok, err := compareFileBytes(filepath.Join(TestDataDir, digest[:2], digest[2:4], digest+".mybin"), randomBytes); !ok || err != nil {
 		t.Fatal("local bytes is not equal", err)
 	}
 }

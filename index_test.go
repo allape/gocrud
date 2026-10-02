@@ -6,7 +6,7 @@ import (
 	mrand "math/rand"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -20,7 +20,7 @@ func TestNewSingleHTMLServe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	indexPath := path.Join(TestDataDir, "index.html")
+	indexPath := filepath.Join(TestDataDir, "index.html")
 
 	file, err := os.Create(indexPath)
 	if err != nil {

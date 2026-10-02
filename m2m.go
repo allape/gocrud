@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/allape/gogger"
@@ -187,7 +186,7 @@ func SetupM2MConnectorController[T any](
 			return
 		}
 
-		deleteById, err := strconv.ParseUint(context.Param("deleteById"), 10, 64)
+		deleteById, err := ParseIDParam(context, "deleteById")
 		if err != nil {
 			MakeErrorResponse(context, RestCoder.BadRequest(), "id for delete is invalid")
 			return
@@ -218,7 +217,7 @@ func SetupM2MConnectorController[T any](
 			reflected := reflect.ValueOf(record)
 			idField := reflected.FieldByName(objectPrimaryFieldName)
 			id := idField.Uint()
-			if id != deleteById {
+			if id != uint64(deleteById) {
 				MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("id of record at %d is invalid, expect %d, but got %d", i, deleteById, id))
 				return
 			}
@@ -265,12 +264,12 @@ func SetupM2MConnectorController[T any](
 			return
 		}
 
-		id1, err := strconv.ParseUint(context.Query(jsonFieldName1), 10, 64)
+		id1, err := ParseID(context.Query(jsonFieldName1))
 		if err != nil {
 			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("value of %s is invalid", jsonFieldName1))
 			return
 		}
-		id2, err := strconv.ParseUint(context.Query(jsonFieldName2), 10, 64)
+		id2, err := ParseID(context.Query(jsonFieldName2))
 		if err != nil {
 			MakeErrorResponse(context, RestCoder.BadRequest(), fmt.Sprintf("value of %s is invalid", jsonFieldName2))
 			return

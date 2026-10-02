@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -127,4 +128,8 @@ func SHASum256FromString(s string) []byte {
 func HexedSHASum256(src []byte) string {
 	//return strings.ToLower(hex.EncodeToString(SHASum256(src)))
 	return hex.EncodeToString(SHASum256(src))
+}
+
+func ParseUint64(number string) (uint64, error) {
+	return strconv.ParseUint(number, 10, 64)
 }

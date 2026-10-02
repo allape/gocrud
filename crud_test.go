@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -46,7 +47,7 @@ func basicSetup(databaseName string) (*gorm.DB, *gin.Engine, error) {
 		databaseName = "test.db"
 	}
 
-	databaseName = path.Join(TestDataDir, databaseName)
+	databaseName = filepath.Join(TestDataDir, databaseName)
 
 	_, err := os.Stat(databaseName)
 	if err != nil {
@@ -54,7 +55,7 @@ func basicSetup(databaseName string) (*gorm.DB, *gin.Engine, error) {
 			return nil, nil, err
 		}
 
-		dir := path.Dir(databaseName)
+		dir := filepath.Dir(databaseName)
 		if dir != "" && dir != "." && dir != "/" {
 			err = os.MkdirAll(dir, os.ModePerm)
 			if err != nil {
@@ -339,8 +340,8 @@ func TestNormalUser(t *testing.T) {
 
 	// test delete
 	deleted, err := crudy.Delete(0)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
 	} else if deleted {
 		t.Fatal("response is not false")
 	}
@@ -513,6 +514,51 @@ func TestSecretUser(t *testing.T) {
 		t.Fatal(err)
 	} else if bytes.Compare(freakName, []byte(freak.Name)) == 0 {
 		t.Fatal("public freak is not censored")
+	}
+}
+
+func TestAddNoCacheHeaders(t *testing.T) {
+	_, engine, err := basicSetup("TestAddNoCacheHeaders.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	engine.GET("", func(c *gin.Context) {
+		AddNoCacheHeaders(c)
+		MakeOkayDataResponse(c, 0)
+	})
+
+	var binding = address.crud.NewAddress(4)
+	var addr = "http://" + binding
+
+	go func() {
+		_ = engine.Run(binding)
+	}()
+
+	t.Logf("Server started on %s", binding)
+
+	wait(t)
+
+	resp, err := http.Get(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("expect status code 200, got %d", resp.StatusCode)
+	}
+
+	if resp.Header.Get("Cache-Control") != "no-cache, no-store, must-revalidate" {
+		t.Fatalf("expect \"no-cache, no-store, must-revalidate\", got %s", resp.Header.Get("Cache-Control"))
+	}
+	if resp.Header.Get("Pragma") != "no-cache" {
+		t.Fatalf("expect \"no-cache\", got %s", resp.Header.Get("Pragma"))
+	}
+	if resp.Header.Get("Expires") != "0" {
+		t.Fatalf("expect \"0\", got %s", resp.Header.Get("Expires"))
 	}
 }
 

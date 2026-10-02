@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 	"time"
 
 	"github.com/allape/gogger"
@@ -51,13 +50,16 @@ func BaseSearchHandlers(overrideSearchHandlers ...SearchHandlers) SearchHandlers
 func NewHardDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gorm.DB) bool {
 	var record T
 	return func(context *gin.Context, db *gorm.DB) bool {
-		id := context.Param("id")
-		if id == "" {
+		id, err := ParseIDParam(context, "id")
+		if err != nil {
+			MakeErrorResponse(context, coder.BadRequest(), "[error] invalid id")
+			return false
+		} else if id == 0 {
 			MakeErrorResponse(context, coder.BadRequest(), "invalid id")
 			return false
 		}
 
-		res := db.Delete(&record, id)
+		res := db.Delete(&record, "id = ?", id)
 
 		return res.RowsAffected > 0
 	}
@@ -66,9 +68,11 @@ func NewHardDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gor
 func NewSoftDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gorm.DB) bool {
 	var record T
 	return func(context *gin.Context, db *gorm.DB) bool {
-		id := context.Param("id")
-
-		if id == "" {
+		id, err := ParseIDParam(context, "id")
+		if err != nil {
+			MakeErrorResponse(context, coder.BadRequest(), "[error] invalid id")
+			return false
+		} else if id == 0 {
 			MakeErrorResponse(context, coder.BadRequest(), "invalid id")
 			return false
 		}
@@ -100,13 +104,29 @@ func NewSoftDeleteSearchHandler(tableName string) SearchHandler {
 func IDsFromCommaSeparatedString(css string) []ID {
 	var ids []ID
 	MapFuncOverCommaSeparatedString(func(s string) {
-		id, err := strconv.ParseInt(s, 10, 64)
+		id, err := ParseID(s)
 		if err != nil {
 			return
 		}
-		ids = append(ids, ID(id))
+		ids = append(ids, id)
 	}, css)
 	return ids
+}
+
+func ParseID(idStr string) (ID, error) {
+	id, err := ParseUint64(idStr)
+	if err != nil {
+		return 0, err
+	}
+	return ID(id), nil
+}
+
+func ParseIDParam(context *gin.Context, name string) (ID, error) {
+	idStr := context.Param(name)
+	if idStr == "" {
+		return 0, errors.New("empty id")
+	}
+	return ParseID(idStr)
 }
 
 // NewDuplicateFieldCheckFunc

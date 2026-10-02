@@ -8,7 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
-	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/minio/sio"
@@ -105,7 +105,7 @@ func TestSaveDareFile(t *testing.T) {
 		t.Fatalf("expected %s, but got %s", string(httpFile.Digest), string(httpFile.SaltyDigest))
 	}
 
-	if ok, err := compareFileBytes(path.Join(TestDataDir, string(httpFile.Name)), plainData); err != nil {
+	if ok, err := compareFileBytes(filepath.Join(TestDataDir, string(httpFile.Name)), plainData); err != nil {
 		t.Fatal(err)
 	} else if !ok {
 		t.Fatalf("local file not equal")
@@ -152,7 +152,7 @@ func TestSaveFileDarelly(t *testing.T) {
 		t.Fatalf("digests are the same")
 	}
 
-	filePath := path.Join(TestDataDir, string(httpFile.Name))
+	filePath := filepath.Join(TestDataDir, string(httpFile.Name))
 	stat, err := os.Stat(filePath)
 	if err != nil {
 		t.Fatal(err)

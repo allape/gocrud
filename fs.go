@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 )
@@ -84,15 +85,15 @@ func NewHttpFileSystemController(group *gin.RouterGroup, folder string, config *
 				return
 			}
 			if httpFile == nil {
-				MakeErrorResponse(context, config.Coder.NotFound(), http.StatusText(http.StatusNotFound))
+				MakeHttpErrorResponse(context, http.StatusNotFound)
 				return
 			}
 
-			filePath := path.Join(folder, string(httpFile.Name))
+			filePath := filepath.Join(folder, string(httpFile.Name))
 			file, err := os.Open(filePath)
 			if err != nil {
 				if os.IsNotExist(err) {
-					MakeErrorResponse(context, config.Coder.NotFound(), http.StatusText(http.StatusNotFound))
+					MakeHttpErrorResponse(context, http.StatusNotFound)
 					return
 				}
 				MakeErrorResponse(context, config.Coder.InternalServerError(), err)
@@ -128,7 +129,7 @@ func NewHttpFileSystemController(group *gin.RouterGroup, folder string, config *
 			context.Request.Body,
 			&SaveDareFileConfig{
 				BaseFolder:     folder,
-				Ext:            path.Ext(path.Base(context.Param("filepath"))),
+				Ext:            filepath.Ext(path.Base(context.Param("filepath"))),
 				Size:           FileSize(context.Request.ContentLength),
 				Validigest:     FileDigest(context.GetHeader(XFileDigest)),
 				MasterKey:      config.FileMasterKey,
@@ -149,10 +150,7 @@ func NewHttpFileSystemController(group *gin.RouterGroup, folder string, config *
 			}
 		}
 
-		context.JSON(http.StatusOK, R[string]{
-			Code: config.Coder.OK(),
-			Data: string(file.Name),
-		})
+		MakeOkayDataResponse(context, file.Name)
 	}
 
 	group.POST("/*filepath", uploadHandler)

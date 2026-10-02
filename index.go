@@ -3,7 +3,6 @@ package gocrud
 import (
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -76,15 +75,13 @@ func NewSingleHTMLServe(group *gin.RouterGroup, indexHTMLFile string, config *Si
 				return
 			}
 
-			_, err = io.Copy(file, tmpFile)
+			n, err = io.Copy(file, tmpFile)
 			if err != nil {
 				MakeErrorResponse(context, coder.InternalServerError(), err)
 				return
 			}
 
-			context.JSON(http.StatusOK, R[any]{
-				Code: coder.OK(),
-			})
+			MakeOkayDataResponse(context, n)
 		}
 
 		group.PUT("*filepath", putHandler)

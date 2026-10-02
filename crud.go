@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/allape/gocensored"
@@ -187,8 +186,11 @@ func (crud *Crud[T]) all(context *gin.Context) {
 func (crud *Crud[T]) one(context *gin.Context) {
 	var result T
 
-	id := Pick(IDsFromCommaSeparatedString(context.Param("id")), 0, 0)
-	if id == 0 {
+	id, err := ParseIDParam(context, "id")
+	if err != nil {
+		crud.error(context, crud.Coder.BadRequest(), "[error] invalid id")
+		return
+	} else if id == 0 {
 		crud.error(context, crud.Coder.BadRequest(), "invalid id")
 		return
 	}
@@ -201,7 +203,7 @@ func (crud *Crud[T]) one(context *gin.Context) {
 
 	db := crud.database.Model(new(T))
 
-	err := db.Where("id = ?", id).First(&result).Error
+	err = db.Where("id = ?", id).First(&result).Error
 	if err != nil {
 		crud.logger.Error().Printf("one: failed to find record: %v", err)
 		crud.error(context, crud.Coder.NotFound(), "not found")
@@ -225,12 +227,12 @@ func (crud *Crud[T]) one(context *gin.Context) {
 }
 
 func (crud *Crud[T]) page(context *gin.Context) {
-	pageNum, err := strconv.ParseUint(context.Param("pageNum"), 10, 64)
+	pageNum, err := ParseUint64(context.Param("pageNum"))
 	if err != nil {
 		crud.error(context, crud.Coder.BadRequest(), "invalid page number")
 		return
 	}
-	pageSize, err := strconv.ParseUint(context.Param("pageSize"), 10, 64)
+	pageSize, err := ParseUint64(context.Param("pageSize"))
 	if err != nil {
 		crud.error(context, crud.Coder.BadRequest(), "invalid page size")
 		return
