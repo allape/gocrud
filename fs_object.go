@@ -253,8 +253,8 @@ var (
 )
 
 type HttpFileSystemObjectHandler struct {
-	BaseFolder string
-	Config     *HttpFileSystemConfig
+	Root   string
+	Config *HttpFileSystemConfig
 }
 
 func (h *HttpFileSystemObjectHandler) Open(digestOrFilename string) (*os.File, *HttpFile, error) {
@@ -266,7 +266,7 @@ func (h *HttpFileSystemObjectHandler) Open(digestOrFilename string) (*os.File, *
 		return nil, nil, HttpFileSystemObjectNotFoundError
 	}
 
-	filePath := filepath.Join(h.BaseFolder, string(httpFile.Name))
+	filePath := filepath.Join(h.Root, string(httpFile.Name))
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, nil, err
@@ -302,7 +302,7 @@ func (h *HttpFileSystemObjectHandler) Save(reader io.Reader, ext string, size Fi
 	file, err := SaveDareFile(
 		reader,
 		&SaveDareFileConfig{
-			BaseFolder:     h.BaseFolder,
+			Root:           h.Root,
 			Ext:            ext,
 			Size:           size,
 			Validigest:     validigest,
@@ -338,8 +338,8 @@ func NewHttpFileSystemObjectHandler[T any](
 	}
 
 	handler := &HttpFileSystemObjectHandler{
-		BaseFolder: folder,
-		Config:     config,
+		Root:   folder,
+		Config: config,
 	}
 
 	return handler, nil

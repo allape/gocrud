@@ -128,7 +128,7 @@ func NewHttpFileSystemController(group *gin.RouterGroup, folder string, config *
 		file, err := SaveDareFile(
 			context.Request.Body,
 			&SaveDareFileConfig{
-				BaseFolder:     folder,
+				Root:           folder,
 				Ext:            filepath.Ext(path.Base(context.Param("filepath"))),
 				Size:           FileSize(context.Request.ContentLength),
 				Validigest:     FileDigest(context.GetHeader(XFileDigest)),

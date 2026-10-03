@@ -37,28 +37,25 @@ type Crud[T any] struct {
 	DisableSave   bool
 	DisableDelete bool
 
-	// Callback func starts with `On` will replace the default operation,
-	//               starts with `Will` will be called before the default operation,
-	// 	             starts with `Did` will be called after the default operation.
+	BeforeGetAll func(context *gin.Context, db *gorm.DB) *gorm.DB
+	AfterGotAll  func(records []T, context *gin.Context, db *gorm.DB)
 
-	WillGetAll func(context *gin.Context, db *gorm.DB) *gorm.DB
-	DidGetAll  func(records []T, context *gin.Context, db *gorm.DB)
+	BeforeGetOne func(context *gin.Context, db *gorm.DB) *gorm.DB
+	OnGetOne     func(context *gin.Context, db *gorm.DB) *gorm.DB
+	AfterGotOne  func(record *T, context *gin.Context, db *gorm.DB)
 
-	WillGetOne func(context *gin.Context, db *gorm.DB) *gorm.DB
-	DidGetOne  func(record *T, context *gin.Context, db *gorm.DB)
+	BeforeCount func(context *gin.Context, db *gorm.DB) *gorm.DB
+	AfterCount  func(count *int64, context *gin.Context, db *gorm.DB)
 
-	WillCount func(context *gin.Context, db *gorm.DB) *gorm.DB
-	DidCount  func(count *int64, context *gin.Context, db *gorm.DB)
+	BeforePage func(pageNum *uint64, pageSize *uint64, context *gin.Context, db *gorm.DB) *gorm.DB
+	AfterPaged func(pageNum uint64, pageSize uint64, list []T, context *gin.Context, db *gorm.DB)
 
-	WillPage func(pageNum *uint64, pageSize *uint64, context *gin.Context, db *gorm.DB) *gorm.DB
-	DidPage  func(pageNum uint64, pageSize uint64, list []T, context *gin.Context, db *gorm.DB)
+	BeforeSave func(record *T, context *gin.Context, db *gorm.DB)
+	AfterSaved func(record *T, context *gin.Context, db *gorm.DB)
 
-	WillSave func(record *T, context *gin.Context, db *gorm.DB)
-	DidSave  func(record *T, context *gin.Context, db *gorm.DB)
-
-	WillDelete func(context *gin.Context, db *gorm.DB)
-	OnDelete   func(context *gin.Context, db *gorm.DB) bool
-	DidDelete  func(context *gin.Context, db *gorm.DB)
+	BeforeDelete func(context *gin.Context, db *gorm.DB)
+	OnDelete     func(context *gin.Context, db *gorm.DB) bool
+	AfterDeleted func(deleted bool, context *gin.Context, db *gorm.DB)
 
 	Coder             Coder
 	MakeOkayResponse  func(context *gin.Context, data any)
@@ -153,8 +150,9 @@ func (crud *Crud[T]) all(context *gin.Context) {
 		return
 	}
 
-	if crud.WillGetAll != nil {
-		if db = crud.WillGetAll(context, db); context.IsAborted() {
+	if crud.BeforeGetAll != nil {
+		db = crud.BeforeGetAll(context, db)
+		if context.IsAborted() {
 			return
 		}
 	}
@@ -174,8 +172,9 @@ func (crud *Crud[T]) all(context *gin.Context) {
 		return
 	}
 
-	if crud.DidGetAll != nil {
-		if crud.DidGetAll(list, context, crud.database); context.IsAborted() {
+	if crud.AfterGotAll != nil {
+		crud.AfterGotAll(list, context, crud.database)
+		if context.IsAborted() {
 			return
 		}
 	}
@@ -184,46 +183,60 @@ func (crud *Crud[T]) all(context *gin.Context) {
 }
 
 func (crud *Crud[T]) one(context *gin.Context) {
-	var result T
+	db := crud.database.Model(new(T))
 
-	id, err := ParseIDParam(context, "id")
-	if err != nil {
-		crud.error(context, crud.Coder.BadRequest(), "[error] invalid id")
-		return
-	} else if id == 0 {
-		crud.error(context, crud.Coder.BadRequest(), "invalid id")
-		return
-	}
-
-	if crud.WillGetOne != nil {
-		if crud.WillGetOne(context, crud.database); context.IsAborted() {
+	if crud.BeforeGetOne != nil {
+		db = crud.BeforeGetOne(context, crud.database)
+		if context.IsAborted() {
 			return
 		}
 	}
 
-	db := crud.database.Model(new(T))
+	if crud.OnGetOne == nil {
+		id, err := ParseIDParam(context, "id")
+		if err != nil {
+			crud.error(context, crud.Coder.BadRequest(), "[error] invalid id")
+			return
+		} else if id == 0 {
+			crud.error(context, crud.Coder.BadRequest(), "invalid id")
+			return
+		}
+		db = db.Where("id = ?", id)
+	} else {
+		db = crud.OnGetOne(context, db)
+		if context.IsAborted() {
+			return
+		}
+	}
 
-	err = db.Where("id = ?", id).First(&result).Error
+	var records []T
+	err := db.Limit(1).Find(&records).Error
 	if err != nil {
 		crud.logger.Error().Printf("one: failed to find record: %v", err)
 		crud.error(context, crud.Coder.NotFound(), "not found")
 		return
+	} else if len(records) == 0 {
+		crud.error(context, crud.Coder.NotFound(), "not found")
+		return
 	}
 
-	err = crud.decensor(context, db, &result)
+	record := records[0]
+
+	err = crud.decensor(context, db, &record)
 	if err != nil {
 		crud.logger.Error().Printf("one: failed to decensor record: %v", err)
 		crud.error(context, crud.Coder.InternalServerError(), "[error] decensor failed")
 		return
 	}
 
-	if crud.DidGetOne != nil {
-		if crud.DidGetOne(&result, context, crud.database); context.IsAborted() {
+	if crud.AfterGotOne != nil {
+		crud.AfterGotOne(&record, context, crud.database)
+		if context.IsAborted() {
 			return
 		}
 	}
 
-	crud.ok(context, result)
+	crud.ok(context, record)
 }
 
 func (crud *Crud[T]) page(context *gin.Context) {
@@ -255,8 +268,9 @@ func (crud *Crud[T]) page(context *gin.Context) {
 		return
 	}
 
-	if crud.WillPage != nil {
-		if crud.WillPage(&pageNum, &pageSize, context, db); context.IsAborted() {
+	if crud.BeforePage != nil {
+		db = crud.BeforePage(&pageNum, &pageSize, context, db)
+		if context.IsAborted() {
 			return
 		}
 	}
@@ -276,8 +290,9 @@ func (crud *Crud[T]) page(context *gin.Context) {
 		return
 	}
 
-	if crud.DidPage != nil {
-		if crud.DidPage(pageNum, pageSize, list, context, db); context.IsAborted() {
+	if crud.AfterPaged != nil {
+		crud.AfterPaged(pageNum, pageSize, list, context, db)
+		if context.IsAborted() {
 			return
 		}
 	}
@@ -294,8 +309,9 @@ func (crud *Crud[T]) count(context *gin.Context) {
 		return
 	}
 
-	if crud.WillCount != nil {
-		if db = crud.WillCount(context, db); context.IsAborted() {
+	if crud.BeforeCount != nil {
+		db = crud.BeforeCount(context, db)
+		if context.IsAborted() {
 			return
 		}
 	}
@@ -308,8 +324,9 @@ func (crud *Crud[T]) count(context *gin.Context) {
 		return
 	}
 
-	if crud.DidCount != nil {
-		if crud.DidCount(&count, context, db); context.IsAborted() {
+	if crud.AfterCount != nil {
+		crud.AfterCount(&count, context, db)
+		if context.IsAborted() {
 			return
 		}
 	}
@@ -325,8 +342,9 @@ func (crud *Crud[T]) save(context *gin.Context) {
 		return
 	}
 
-	if crud.WillSave != nil {
-		if crud.WillSave(record, context, crud.database); context.IsAborted() {
+	if crud.BeforeSave != nil {
+		crud.BeforeSave(record, context, crud.database)
+		if context.IsAborted() {
 			return
 		}
 	}
@@ -352,8 +370,9 @@ func (crud *Crud[T]) save(context *gin.Context) {
 		return
 	}
 
-	if crud.DidSave != nil {
-		if crud.DidSave(record, context, res); context.IsAborted() {
+	if crud.AfterSaved != nil {
+		crud.AfterSaved(record, context, res)
+		if context.IsAborted() {
 			return
 		}
 	}
@@ -362,20 +381,21 @@ func (crud *Crud[T]) save(context *gin.Context) {
 }
 
 func (crud *Crud[T]) delete(context *gin.Context) {
-	deleted := false
-
-	if crud.WillDelete != nil {
-		if crud.WillDelete(context, crud.database); context.IsAborted() {
+	if crud.BeforeDelete != nil {
+		crud.BeforeDelete(context, crud.database)
+		if context.IsAborted() {
 			return
 		}
 	}
 
-	if deleted = crud.OnDelete(context, crud.database); context.IsAborted() {
+	deleted := crud.OnDelete(context, crud.database)
+	if context.IsAborted() {
 		return
 	}
 
-	if crud.DidDelete != nil {
-		if crud.DidDelete(context, crud.database); context.IsAborted() {
+	if crud.AfterDeleted != nil {
+		crud.AfterDeleted(deleted, context, crud.database)
+		if context.IsAborted() {
 			return
 		}
 	}
@@ -407,7 +427,7 @@ func Setup[T any](
 	crud.logger = logger
 
 	if crud.logger == nil {
-		name := strings.ToLower(reflect.TypeOf(new(T)).Elem().Name())
+		name := strings.ToLower(reflect.TypeFor[T]().Name())
 		crud.logger = gogger.New(fmt.Sprintf("crud:%s", name))
 	}
 

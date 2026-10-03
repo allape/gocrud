@@ -167,7 +167,7 @@ func TestNewHttpFileSystemObjectHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Logf("%v", handler.BaseFolder)
+	t.Logf("%v", handler.Root)
 
 	randomBytes, err := NewRandomBytes(10*MegaByte + rand.Intn(100)*MegaByte)
 	if err != nil {

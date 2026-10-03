@@ -73,7 +73,7 @@ func TestSaveDareFile(t *testing.T) {
 	plainDataSize := int64(len(plainData))
 
 	_, err = SaveDareFile(bytes.NewReader(plainData), &SaveDareFileConfig{
-		BaseFolder: TestDataDir,
+		Root:       TestDataDir,
 		Size:       FileSize(plainDataSize + 1),
 		Validigest: FileDigest(HexedSHASum256(plainData)),
 	})
@@ -82,7 +82,7 @@ func TestSaveDareFile(t *testing.T) {
 	}
 
 	_, err = SaveDareFile(bytes.NewReader(plainData), &SaveDareFileConfig{
-		BaseFolder: TestDataDir,
+		Root:       TestDataDir,
 		Size:       FileSize(plainDataSize),
 		Validigest: FileDigest(HexedSHASum256(append(plainData, 1, 2, 3))),
 	})
@@ -93,7 +93,7 @@ func TestSaveDareFile(t *testing.T) {
 	correctHash := HexedSHASum256(plainData)
 
 	httpFile, err := SaveDareFile(bytes.NewReader(plainData), &SaveDareFileConfig{
-		BaseFolder: TestDataDir,
+		Root:       TestDataDir,
 		Size:       FileSize(plainDataSize),
 		Validigest: FileDigest(correctHash),
 	})
@@ -114,7 +114,7 @@ func TestSaveDareFile(t *testing.T) {
 	saltyDigest := HexedSHASum256(append(plainData, hashSalt...))
 
 	httpFile1, err := SaveDareFile(bytes.NewReader(plainData), &SaveDareFileConfig{
-		BaseFolder: TestDataDir,
+		Root:       TestDataDir,
 		Size:       FileSize(plainDataSize),
 		Validigest: FileDigest(correctHash),
 		HashSalt:   hashSalt,
@@ -136,7 +136,7 @@ func TestSaveFileDarelly(t *testing.T) {
 	plainDataSize := int64(len(plainData))
 
 	httpFile, err := SaveDareFile(bytes.NewReader(plainData), &SaveDareFileConfig{
-		BaseFolder: TestDataDir,
+		Root:       TestDataDir,
 		Size:       FileSize(plainDataSize),
 		MasterKey:  masterKey,
 		HashSalt:   hashSalt,

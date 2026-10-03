@@ -48,7 +48,6 @@ func BaseSearchHandlers(overrideSearchHandlers ...SearchHandlers) SearchHandlers
 }
 
 func NewHardDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gorm.DB) bool {
-	var record T
 	return func(context *gin.Context, db *gorm.DB) bool {
 		id, err := ParseIDParam(context, "id")
 		if err != nil {
@@ -59,14 +58,17 @@ func NewHardDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gor
 			return false
 		}
 
-		res := db.Delete(&record, "id = ?", id)
+		res := db.Delete(new(T), "id = ?", id)
+		if res.Error != nil {
+			MakeErrorResponse(context, coder.InternalServerError(), res)
+			return false
+		}
 
 		return res.RowsAffected > 0
 	}
 }
 
 func NewSoftDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gorm.DB) bool {
-	var record T
 	return func(context *gin.Context, db *gorm.DB) bool {
 		id, err := ParseIDParam(context, "id")
 		if err != nil {
@@ -77,7 +79,11 @@ func NewSoftDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gor
 			return false
 		}
 
-		res := db.Model(&record).Where("id = ?", id).UpdateColumn("deleted_at", time.Now())
+		res := db.Model(new(T)).Where("id = ?", id).UpdateColumn("deleted_at", time.Now())
+		if res.Error != nil {
+			MakeErrorResponse(context, coder.InternalServerError(), res)
+			return false
+		}
 
 		return res.RowsAffected > 0
 	}

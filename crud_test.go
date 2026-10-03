@@ -149,7 +149,7 @@ func TestNormalUser(t *testing.T) {
 			"name_eq":         KeywordEqual("name", nil),
 			"age_gte":         KeywordStatement("age", OperatorGte, NumericValidate),
 		}),
-		WillGetAll: func(context *gin.Context, db *gorm.DB) *gorm.DB {
+		BeforeGetAll: func(context *gin.Context, db *gorm.DB) *gorm.DB {
 			handledSearch := GetHandledSearch(context)
 			if !slices.Contains(handledSearch, "in_id") {
 				MakeErrorResponse(context, RestCoder.BadRequest(), "in_id can NOT be empty for getting all")
@@ -157,7 +157,7 @@ func TestNormalUser(t *testing.T) {
 			}
 			return db
 		},
-		WillSave: func(record *User, context *gin.Context, db *gorm.DB) {
+		BeforeSave: func(record *User, context *gin.Context, db *gorm.DB) {
 			if strings.Contains(record.Name, "freak") {
 				MakeErrorResponse(context, RestCoder.BadRequest(), "freak is not allowed")
 				return
@@ -577,7 +577,7 @@ func testRunCrudServer(t *testing.T) {
 			"like_name": KeywordLike("name", nil),
 			"name":      KeywordEqual("name", nil),
 		}),
-		WillSave: func(record *User, context *gin.Context, db *gorm.DB) {
+		BeforeSave: func(record *User, context *gin.Context, db *gorm.DB) {
 			record.Name = norm.NFC.String(strings.TrimSpace(record.Name))
 			if err := nameDuplicateChecker(context, record); err != nil {
 				return

@@ -16,7 +16,7 @@ import (
 )
 
 type SaveDareFileConfig struct {
-	BaseFolder     string        // will use cwd when empty
+	Root           string        // will use cwd when empty
 	Ext            string        // will use .bin when empty
 	Size           FileSize      // will check the size of dst file when not 0
 	Validigest     FileDigest    // will check file digest when not empty
@@ -39,8 +39,8 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 		config = &SaveDareFileConfig{}
 	}
 
-	if config.BaseFolder == "" {
-		config.BaseFolder = "."
+	if config.Root == "" {
+		config.Root = "."
 	}
 
 	if config.Ext == "" {
@@ -139,7 +139,7 @@ func SaveDareFile(source io.Reader, config *SaveDareFileConfig) (httpFile *HttpF
 		FileKey:     fileKey,
 	}
 
-	fullPath := filepath.Join(config.BaseFolder, string(name))
+	fullPath := filepath.Join(config.Root, string(name))
 	stat, err := os.Stat(fullPath)
 	if err != nil {
 		if !os.IsNotExist(err) {

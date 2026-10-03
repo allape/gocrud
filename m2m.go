@@ -396,14 +396,10 @@ func (d *M2MConnectorHandler[M1, M2, M2MConnector]) SaveAfterDelete(deleteByFiel
 	}
 
 	res := new(R[int64])
-
 	err = MakeJSONRequest(d.httpClient, d.okayHttpStatusRange, u, http.MethodPost, bytes.NewReader(body), res)
 	if err != nil {
 		return -1, err
-	} else if res == nil {
-		return -1, errors.New("response is nil")
 	}
-
 	return res.Data, nil
 }
 
@@ -417,10 +413,7 @@ func (d *M2MConnectorHandler[M1, M2, M2MConnector]) Delete(id1, id2 ID) (int64, 
 	err = MakeJSONRequest(d.httpClient, d.okayHttpStatusRange, u, http.MethodDelete, bytes.NewReader(nil), res)
 	if err != nil {
 		return -1, err
-	} else if res == nil {
-		return -1, errors.New("response is nil")
 	}
-
 	return res.Data, nil
 }
 
