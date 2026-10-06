@@ -15,7 +15,6 @@ import (
 	censored "github.com/allape/gocensored"
 	"github.com/allape/gogger"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/text/unicode/norm"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -578,7 +577,7 @@ func testRunCrudServer(t *testing.T) {
 			"name":      KeywordEqual("name", nil),
 		}),
 		BeforeSave: func(record *User, context *gin.Context, db *gorm.DB) {
-			record.Name = norm.NFC.String(strings.TrimSpace(record.Name))
+			record.Name = TextTrimAndNorm(record.Name)
 			if err := nameDuplicateChecker(context, record); err != nil {
 				return
 			}

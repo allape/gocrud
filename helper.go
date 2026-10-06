@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 func Ternary[T any](condition bool, onTrue T, onFalse T) T {
@@ -132,4 +134,11 @@ func HexedSHASum256(src []byte) string {
 
 func ParseUint64(number string) (uint64, error) {
 	return strconv.ParseUint(number, 10, 64)
+}
+
+// TextTrimAndNorm
+//
+// For Normalize Japanese and Korean etc.
+func TextTrimAndNorm(text string) string {
+	return norm.NFC.String(strings.TrimSpace(text))
 }

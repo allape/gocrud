@@ -222,6 +222,34 @@ func TestIsNotEmptyArray(t *testing.T) {
 	}
 }
 
+func TestTextTrimAndNorm(t *testing.T) {
+	a := TextTrimAndNorm(" abc\t\n")
+	if a != "abc" {
+		t.Fatalf("expect abc, got %s", a)
+	}
+
+	// the decomposed Jamo spelling
+	DJSKoreanText := "지현"
+	if len([]rune(DJSKoreanText)) != 5 {
+		t.Fatalf("expect 5, got %d", len([]rune(DJSKoreanText)))
+	} else if len([]byte(DJSKoreanText)) != 15 {
+		t.Fatalf("expect 15, got %d", len(DJSKoreanText))
+	}
+
+	NPHSSKoreanText := "지현"
+	// the normal precomposed Hangul syllable spelling
+	if len([]rune(NPHSSKoreanText)) != 2 {
+		t.Fatalf("expect 2, got %d", len([]rune(NPHSSKoreanText)))
+	} else if len([]byte(NPHSSKoreanText)) != 6 {
+		t.Fatalf("expect 4, got %d", len([]byte(NPHSSKoreanText)))
+	}
+
+	b := TextTrimAndNorm(DJSKoreanText)
+	if b != NPHSSKoreanText {
+		t.Fatalf("expect %s, got %s", NPHSSKoreanText, b)
+	}
+}
+
 func wait(t *testing.T) {
 	for i := 3; i > 0; i-- {
 		t.Logf("...%d", i)
