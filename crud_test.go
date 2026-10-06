@@ -22,8 +22,9 @@ import (
 
 type User struct {
 	Base
-	Name string `json:"name"`
-	Age  int    `json:"age"`
+	Name        string `json:"name"`
+	Age         int    `json:"age"`
+	Description string `json:"description"`
 }
 
 type Tag struct {
@@ -593,6 +594,9 @@ func testRunCrudServer(t *testing.T) {
 			"like_name": KeywordLike("name", nil),
 			"name":      KeywordEqual("name", nil),
 		}),
+		BeforeSave: func(record *Tag, context *gin.Context, db *gorm.DB) {
+			record.Name = TextTrimAndNorm(record.Name)
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
