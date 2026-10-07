@@ -176,16 +176,18 @@ func NewDuplicateFieldCheckFunc[T any](
 		}
 
 		if id > 0 {
-			var old T
-			if err := db.Model(&old).Where("id = ?", id).First(&old).Error; err != nil {
-				MakeErrorResponse(context, RestCoder.NotFound(), "record not found")
-				return fmt.Errorf("unable to find old record for id [%d]", id)
+			var oldOnes []T
+			if err := db.Model(new(T)).Where("id = ?", id).Limit(1).Find(&oldOnes).Error; err != nil {
+				MakeErrorResponse(context, RestCoder.InternalServerError(), "failed to find old records")
+				return fmt.Errorf("unable to find old records for id %d", id)
 			}
 
-			oldValue := reflect.ValueOf(old).FieldByName(objectFieldName).String()
-
-			if oldValue == valueForCheck {
-				valueForCheck = ""
+			if len(oldOnes) > 0 {
+				old := oldOnes[0]
+				oldValue := reflect.ValueOf(old).FieldByName(objectFieldName).String()
+				if oldValue == valueForCheck {
+					valueForCheck = ""
+				}
 			}
 		}
 

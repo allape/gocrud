@@ -569,6 +569,18 @@ func testRunCrudServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	engine.DELETE("/clear-db", func(context *gin.Context) {
+		db.Exec("DELETE FROM users WHERE id > 0")
+		db.Exec("DELETE FROM sqlite_sequence WHERE name = 'users'")
+		db.Exec("DELETE FROM tags WHERE id > 0")
+		db.Exec("DELETE FROM sqlite_sequence WHERE name = 'tags'")
+		db.Exec("DELETE FROM user_tags WHERE id > 0")
+		db.Exec("DELETE FROM sqlite_sequence WHERE name = 'user_tags'")
+		db.Exec("DELETE FROM secret_users WHERE id > 0")
+		db.Exec("DELETE FROM sqlite_sequence WHERE name = 'secret_users'")
+		MakeOkayDataResponse(context, true)
+	})
+
 	nameDuplicateChecker, err := NewDuplicateFieldCheckFunc[User](db, gogger.New("user:name:dupchk"), "Name")
 
 	err = Setup(engine.Group("/user"), db, nil, &Crud[User]{
