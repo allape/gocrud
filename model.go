@@ -23,18 +23,10 @@ type Base struct {
 	DeletedAt *time.Time `json:"deletedAt"`
 }
 
-func BaseSearchHandlers(overrideSearchHandlers ...SearchHandlers) SearchHandlers {
-	base := SearchHandlers{
-		"in_id":   KeywordIDIn("id", nil),
-		"deleted": NewSoftDeleteSearchHandler(""),
-
-		"orderBy_createdAt": SortBy("created_at"),
-		"orderBy_updatedAt": SortBy("updated_at"),
-		"orderBy_deletedAt": SortBy("deleted_at"),
-		"orderBy_priority":  SortBy("priority"),
-
-		// `order by` must be followed by `ASC` or `DESC`
-		// `sort by` has defined the order
+func NewPrioritySearchHandlers() SearchHandlers {
+	return SearchHandlers{
+		"orderBy_priority": SortBy("priority"),
+		// sortByPriorityThenUpdatedAt: true|false
 		"sortByPriorityThenUpdatedAt": func(db *gorm.DB, values []string, _ *gin.Context) (*gorm.DB, error) {
 			if doSort, ok := PickFirstValuableString(values); ok {
 				if doSort != "false" {
@@ -44,7 +36,21 @@ func BaseSearchHandlers(overrideSearchHandlers ...SearchHandlers) SearchHandlers
 			return db, nil
 		},
 	}
-	return MergeSearchHandlers(base, overrideSearchHandlers...)
+}
+
+func NewBaseSearchHandlers(extra ...SearchHandlers) SearchHandlers {
+	base := MergeSearchHandlers(
+		SearchHandlers{
+			"in_id":   KeywordIDIn("id", nil),
+			"deleted": NewSoftDeleteSearchHandler(""),
+
+			"orderBy_createdAt": SortBy("created_at"),
+			"orderBy_updatedAt": SortBy("updated_at"),
+			"orderBy_deletedAt": SortBy("deleted_at"),
+		},
+		NewPrioritySearchHandlers(),
+	)
+	return MergeSearchHandlers(base, extra...)
 }
 
 func NewHardDeleteHandler[T any](coder Coder) func(context *gin.Context, db *gorm.DB) bool {

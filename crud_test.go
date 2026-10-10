@@ -33,8 +33,9 @@ type Tag struct {
 }
 
 type UserTag struct {
-	UserID ID `json:"userId,omitempty" gorm:"primaryKey"`
-	TagID  ID `json:"tagId" gorm:"primaryKey"`
+	UserID   ID    `json:"userId,omitempty" gorm:"primaryKey"`
+	TagID    ID    `json:"tagId" gorm:"primaryKey"`
+	Priority int64 `json:"priority"`
 }
 
 type SecretUser struct {
@@ -138,7 +139,7 @@ func TestNormalUser(t *testing.T) {
 
 	err = Setup(engine.Group("/user"), db, userCrudL, &Crud[User]{
 		EnableGetAll: true,
-		SearchHandlers: BaseSearchHandlers(SearchHandlers{
+		SearchHandlers: NewBaseSearchHandlers(SearchHandlers{
 			"id": KeywordIn("id", func(value []string) []string {
 				t.Log("id filter:", value)
 				return value
@@ -585,7 +586,7 @@ func testRunCrudServer(t *testing.T) {
 
 	err = Setup(engine.Group("/user"), db, nil, &Crud[User]{
 		EnableGetAll: true,
-		SearchHandlers: BaseSearchHandlers(SearchHandlers{
+		SearchHandlers: NewBaseSearchHandlers(SearchHandlers{
 			"like_name": KeywordLike("name", nil),
 			"name":      KeywordEqual("name", nil),
 		}),
@@ -602,7 +603,7 @@ func testRunCrudServer(t *testing.T) {
 
 	err = Setup(engine.Group("/tag"), db, nil, &Crud[Tag]{
 		EnableGetAll: true,
-		SearchHandlers: BaseSearchHandlers(SearchHandlers{
+		SearchHandlers: NewBaseSearchHandlers(SearchHandlers{
 			"like_name": KeywordLike("name", nil),
 			"name":      KeywordEqual("name", nil),
 		}),

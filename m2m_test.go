@@ -25,7 +25,7 @@ func TestSetupM2MConnectorController(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var binding = address.m2m.NewAddress(1)
+	var binding = address.m2m.NewAddress(0)
 	var addr = "http://" + binding
 
 	go func() {
@@ -73,7 +73,7 @@ func TestSetupM2MConnectorController(t *testing.T) {
 	}
 
 	// test basic delete
-	deleteR := new(R[int64])
+	deleteR := new(R[bool])
 	err = MakeJSONRequest(
 		http.DefaultClient, &DefaultOkayHttpStatusRange,
 		mustBeURL(addr+"/user-tag?userId=234&tagId=567"), http.MethodDelete,
@@ -83,11 +83,11 @@ func TestSetupM2MConnectorController(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deleteR.Data != 0 {
-		t.Fatalf("got %d, want 0", deleteR.Data)
+	if deleteR.Data {
+		t.Fatalf("got %v, want false", deleteR.Data)
 	}
 
-	deleteR = new(R[int64])
+	deleteR = new(R[bool])
 	err = MakeJSONRequest(
 		http.DefaultClient, &DefaultOkayHttpStatusRange,
 		mustBeURL(addr+"/user-tag?userId=123&tagId=456"), http.MethodDelete,
@@ -97,8 +97,8 @@ func TestSetupM2MConnectorController(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deleteR.Data != 1 {
-		t.Fatalf("got %d, want 1", deleteR.Data)
+	if !deleteR.Data {
+		t.Fatalf("got %v, want true", deleteR.Data)
 	}
 
 	batchSaveR := new(R[int64])
@@ -305,7 +305,7 @@ func TestNewM2MConnectorHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var binding = address.m2m.NewAddress(0)
+	var binding = address.m2m.NewAddress(1)
 	var addr = "http://" + binding
 
 	go func() {
@@ -344,18 +344,18 @@ func TestNewM2MConnectorHandler(t *testing.T) {
 		t.Fatalf("got %d, want 456", all[0].TagID)
 	}
 
-	count, err = handler.Delete(123, 567)
+	deleted, err := handler.Delete(123, 567)
 	if err != nil {
 		t.Fatal(err)
-	} else if count != 0 {
-		t.Fatalf("got %d, want 0", count)
+	} else if deleted {
+		t.Fatalf("got %v, want false", deleted)
 	}
 
-	count, err = handler.Delete(123, 456)
+	deleted, err = handler.Delete(123, 456)
 	if err != nil {
 		t.Fatal(err)
-	} else if count != 1 {
-		t.Fatalf("got %d, want 1", count)
+	} else if !deleted {
+		t.Fatalf("got %v, want true", deleted)
 	}
 
 	count, err = handler.SaveAfterDelete(handler.ObjectFieldName1, 123, []UserTag{
@@ -441,4 +441,47 @@ func TestNewM2MConnectorHandler(t *testing.T) {
 		t.Fatalf("got nil, want error")
 	}
 	t.Logf("got error: %v", err)
+}
+
+func TestSetupM2MCrud(t *testing.T) {
+	db, engine, err := basicSetup("TestSetupM2MCrud.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = SetupM2MCrud[UserTag](
+		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
+		"TagID", "UserID",
+		&Crud[UserTag]{
+			SearchHandlers: MergeSearchHandlers(
+				NewPrioritySearchHandlers(),
+				SearchHandlers{
+					"priority": KeywordEqual("priority", nil),
+				},
+			),
+		},
+	)
+
+	err = SetupM2MConnectorController[UserTag](
+		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
+		"UserID", "TagID",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var binding = address.m2m.NewAddress(2)
+	var addr = "http://" + binding
+
+	go func() {
+		_ = engine.Run(binding)
+	}()
+
+	t.Logf("Server started on %s", binding)
+
+	wait(t)
+
+	// TODO
+	t.Logf("addr %s", addr)
 }
