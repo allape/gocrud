@@ -33,9 +33,11 @@ type Tag struct {
 }
 
 type UserTag struct {
-	UserID   ID    `json:"userId,omitempty" gorm:"primaryKey"`
-	TagID    ID    `json:"tagId" gorm:"primaryKey"`
-	Priority int64 `json:"priority"`
+	UserID    ID        `json:"userId,omitempty" gorm:"primaryKey"`
+	TagID     ID        `json:"tagId" gorm:"primaryKey"`
+	Priority  int64     `json:"priority"`
+	CreatedAt time.Time `json:"createdAt" gorm:"autoCreateTime;<-:create"`
+	UpdatedAt time.Time `json:"updatedAt" gorm:"autoUpdateTime"`
 }
 
 type SecretUser struct {
@@ -144,10 +146,10 @@ func TestNormalUser(t *testing.T) {
 				t.Log("id filter:", value)
 				return value
 			}),
-			"field_not_found": KeywordLike("field_not_found", nil),
-			"like_name":       KeywordLike("name", nil),
-			"name":            KeywordLike("name", nil),
-			"name_eq":         KeywordEqual("name", nil),
+			"field_not_found": KeywordLike("field_not_found"),
+			"like_name":       KeywordLike("name"),
+			"name":            KeywordLike("name"),
+			"name_eq":         KeywordEqual("name"),
 			"age_gte":         KeywordStatement("age", OperatorGte, NumericValidate),
 		}),
 		BeforeGetAll: func(context *gin.Context, db *gorm.DB) *gorm.DB {
@@ -202,7 +204,7 @@ func TestNormalUser(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	_, err = crudy.All(nil)
+	_, err = crudy.All()
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -296,7 +298,7 @@ func TestNormalUser(t *testing.T) {
 	}
 
 	// test page
-	page, err := crudy.Page(1, 1, nil)
+	page, err := crudy.Page(1, 1)
 	if err != nil {
 		t.Fatal(err)
 	} else if page == nil {
@@ -308,7 +310,7 @@ func TestNormalUser(t *testing.T) {
 	}
 
 	// test zero page
-	page, err = crudy.Page(0, 0, nil)
+	page, err = crudy.Page(0, 0)
 	if err != nil {
 		t.Fatal(err)
 	} else if page == nil {
@@ -487,14 +489,14 @@ func TestSecretUser(t *testing.T) {
 		t.Fatal("freak is not decensored")
 	}
 
-	freaks, err := crudy.Page(1, 10, nil)
+	freaks, err := crudy.Page(1, 10)
 	if err != nil {
 		t.Fatal(err)
 	} else if len(freaks) != 1 {
 		t.Fatal("freaks length is not 1")
 	}
 
-	freaks, err = crudy.All(nil)
+	freaks, err = crudy.All()
 	if err != nil {
 		t.Fatal(err)
 	} else if len(freaks) != 1 {
@@ -587,8 +589,8 @@ func testRunCrudServer(t *testing.T) {
 	err = Setup(engine.Group("/user"), db, nil, &Crud[User]{
 		EnableGetAll: true,
 		SearchHandlers: NewBaseSearchHandlers(SearchHandlers{
-			"like_name": KeywordLike("name", nil),
-			"name":      KeywordEqual("name", nil),
+			"like_name": KeywordLike("name"),
+			"name":      KeywordEqual("name"),
 		}),
 		BeforeSave: func(record *User, context *gin.Context, db *gorm.DB) {
 			record.Name = TextTrimAndNorm(record.Name)
@@ -604,8 +606,8 @@ func testRunCrudServer(t *testing.T) {
 	err = Setup(engine.Group("/tag"), db, nil, &Crud[Tag]{
 		EnableGetAll: true,
 		SearchHandlers: NewBaseSearchHandlers(SearchHandlers{
-			"like_name": KeywordLike("name", nil),
-			"name":      KeywordEqual("name", nil),
+			"like_name": KeywordLike("name"),
+			"name":      KeywordEqual("name"),
 		}),
 		BeforeSave: func(record *Tag, context *gin.Context, db *gorm.DB) {
 			record.Name = TextTrimAndNorm(record.Name)
@@ -615,7 +617,7 @@ func testRunCrudServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = SetupM2MConnectorController[UserTag](
+	err = SetupM2MController[UserTag](
 		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
 		"UserID", "TagID",
 		nil,

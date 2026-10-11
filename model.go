@@ -41,7 +41,7 @@ func NewPrioritySearchHandlers() SearchHandlers {
 func NewBaseSearchHandlers(extra ...SearchHandlers) SearchHandlers {
 	base := MergeSearchHandlers(
 		SearchHandlers{
-			"in_id":   KeywordIDIn("id", nil),
+			"in_id":   KeywordIDIn("id"),
 			"deleted": NewSoftDeleteSearchHandler(""),
 
 			"orderBy_createdAt": SortBy("created_at"),

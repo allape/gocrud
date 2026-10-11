@@ -10,13 +10,13 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSetupM2MConnectorController(t *testing.T) {
-	db, engine, err := basicSetup("TestSetupM2MConnectorController.db")
+func TestSetupM2MController(t *testing.T) {
+	db, engine, err := basicSetup("TestSetupM2MController.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = SetupM2MConnectorController[UserTag](
+	err = SetupM2MController[UserTag](
 		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
 		"UserID", "TagID",
 		nil,
@@ -283,16 +283,16 @@ func TestSetupM2MConnectorController(t *testing.T) {
 	}
 }
 
-func TestNewM2MConnectorHandler(t *testing.T) {
-	db, engine, err := basicSetup("TestNewM2MConnectorHandler.db")
+func TestNewM2MHandler(t *testing.T) {
+	db, engine, err := basicSetup("TestNewM2MHandler.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = SetupM2MConnectorController[UserTag](
+	err = SetupM2MController[UserTag](
 		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
 		"UserID", "TagID",
-		&SetupM2MConnectorControllerOptions[UserTag]{
+		&SetupM2MControllerOptions[UserTag]{
 			OnRecordCheck: func(record *UserTag, db *gorm.DB, context *gin.Context) {
 				if record.UserID == 404 {
 					MakeErrorResponse(context, RestCoder.BadRequest(), "404 user id")
@@ -316,7 +316,7 @@ func TestNewM2MConnectorHandler(t *testing.T) {
 
 	wait(t)
 
-	handler, err := NewM2MConnectorHandler[User, Tag, UserTag](
+	handler, err := NewM2MHandler[User, Tag, UserTag](
 		addr+"/user-tag", nil, nil,
 		"UserID", "TagID",
 	)
@@ -453,23 +453,15 @@ func TestSetupM2MCrud(t *testing.T) {
 		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
 		"TagID", "UserID",
 		&Crud[UserTag]{
+			EnableGetAll: true,
 			SearchHandlers: MergeSearchHandlers(
 				NewPrioritySearchHandlers(),
 				SearchHandlers{
-					"priority": KeywordEqual("priority", nil),
+					"priority": KeywordEqual("priority"),
 				},
 			),
 		},
 	)
-
-	err = SetupM2MConnectorController[UserTag](
-		engine.Group("/user-tag"), db, gogger.New("controller:user-tag"),
-		"UserID", "TagID",
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	var binding = address.m2m.NewAddress(2)
 	var addr = "http://" + binding
@@ -482,6 +474,73 @@ func TestSetupM2MCrud(t *testing.T) {
 
 	wait(t)
 
-	// TODO
-	t.Logf("addr %s", addr)
+	crudy, err := NewM2MCrudy[UserTag](
+		"userId", "tagId",
+		addr+"/user-tag",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	all1, err := crudy.All()
+	if err != nil {
+		t.Fatal(err)
+	} else if len(all1) != 0 {
+		t.Fatalf("got %d, want 0", len(all1))
+	}
+
+	page1, err := crudy.Page(1, 10)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(page1) != 0 {
+		t.Fatalf("got %d, want 0", len(page1))
+	}
+
+	saved1, err := crudy.Save(&UserTag{UserID: 1, TagID: 1, Priority: 99})
+	if err != nil {
+		t.Fatal(err)
+	} else if saved1 == nil {
+		t.Fatalf("saved1 is nil")
+	} else if saved1.Priority != 99 {
+		t.Fatalf("saved1.Priority: got %d, want 99", saved1.Priority)
+	} else if saved1.UserID != 1 {
+		t.Fatalf("saved1.UserID: got %d, want 1", saved1.UserID)
+	} else if saved1.TagID != 1 {
+		t.Fatalf("saved1.TagID: got %d, want 1", saved1.TagID)
+	}
+
+	one1, err := crudy.One(1, 1)
+	if err != nil {
+		t.Fatal(err)
+	} else if one1 == nil {
+		t.Fatalf("one1 is nil")
+	} else if one1.Priority != 99 {
+		t.Fatalf("one1.Priority: got %d, want 99", one1.Priority)
+	} else if one1.UserID != 1 {
+		t.Fatalf("one1.UserID: got %d, want 1", one1.UserID)
+	} else if one1.TagID != 1 {
+		t.Fatalf("one1.TagID: got %d, want 1", one1.TagID)
+	}
+
+	all2, err := crudy.All()
+	if err != nil {
+		t.Fatal(err)
+	} else if len(all2) != 1 {
+		t.Fatalf("got %d, want 1", len(all2))
+	} else if all2[0].UserID != 1 {
+		t.Fatalf("all2[0].UserID: got %d, want 1", all2[0].UserID)
+	} else if all2[0].TagID != 1 {
+		t.Fatalf("all2[0].TagID: got %d, want 1", all2[0].TagID)
+	}
+
+	page2, err := crudy.Page(1, 10)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(page2) != 1 {
+		t.Fatalf("got %d, want 1", len(page2))
+	} else if page2[0].UserID != 1 {
+		t.Fatalf("page2[0].UserID: got %d, want 1", page2[0].UserID)
+	} else if page2[0].TagID != 1 {
+		t.Fatalf("page2[0].TagID: got %d, want 1", page2[0].TagID)
+	}
 }

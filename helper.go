@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -141,4 +142,20 @@ func ParseUint64(number string) (uint64, error) {
 // For Normalize Japanese and Korean etc.
 func TextTrimAndNorm(text string) string {
 	return norm.NFC.String(strings.TrimSpace(text))
+}
+
+func MergeMaps[Map ~map[K]V, K comparable, V any](base Map, extraMaps ...Map) Map {
+	if base == nil {
+		if len(extraMaps) == 0 {
+			return nil
+		}
+		base = Map{}
+	}
+	for _, extra := range extraMaps {
+		if extra == nil {
+			continue
+		}
+		maps.Insert(base, maps.All(extra))
+	}
+	return base
 }

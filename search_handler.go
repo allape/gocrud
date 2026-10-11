@@ -2,7 +2,6 @@ package gocrud
 
 import (
 	"fmt"
-	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -56,16 +55,7 @@ func HandleSearch(context *gin.Context, db *gorm.DB, searchHandlers SearchHandle
 }
 
 func MergeSearchHandlers(searchHandlers SearchHandlers, extraSearchHandlers ...SearchHandlers) SearchHandlers {
-	if searchHandlers == nil {
-		searchHandlers = SearchHandlers{}
-	}
-	for _, handlers := range extraSearchHandlers {
-		if handlers == nil {
-			continue
-		}
-		maps.Insert(searchHandlers, maps.All(handlers))
-	}
-	return searchHandlers
+	return MergeMaps(searchHandlers, extraSearchHandlers...)
 }
 
 type (
@@ -111,7 +101,7 @@ var Operators = []Operator{
 	OperatorNeq,
 }
 
-func KeywordStatement(field string, operator Operator, vt ValueTransformer[string, any]) SearchHandler {
+func KeywordStatement(field string, operator Operator, vts ...ValueTransformer[string, any]) SearchHandler {
 	if !slices.Contains(Operators, operator) {
 		panic(fmt.Sprintf("operator %s is not a valid operator", operator))
 	}
@@ -119,10 +109,13 @@ func KeywordStatement(field string, operator Operator, vt ValueTransformer[strin
 	return func(db *gorm.DB, values []string, _ *gin.Context) (*gorm.DB, error) {
 		if value, ok := PickFirstValuableString(values); ok {
 			var anyValue any = value
-			if vt != nil {
-				anyValue = vt(value)
-				if anyValue == nil {
-					return db, nil
+
+			for _, vt := range vts {
+				if vt != nil {
+					anyValue = vt(value)
+					if anyValue == nil {
+						return db, nil
+					}
 				}
 			}
 
@@ -142,44 +135,50 @@ func KeywordStatement(field string, operator Operator, vt ValueTransformer[strin
 	}
 }
 
-func KeywordIn(field string, vt ValueTransformer[[]string, []string]) SearchHandler {
+func KeywordIn(field string, vts ...ValueTransformer[[]string, []string]) SearchHandler {
 	return KeywordStatement(field, OperatorIn, func(value string) any {
 		array := strings.Split(value, ",")
-		if vt != nil {
-			array = vt(array)
-			if len(array) == 0 {
-				return nil
+		for _, vt := range vts {
+			if vt != nil {
+				array = vt(array)
+				if len(array) == 0 {
+					return nil
+				}
 			}
 		}
 		return array
 	})
 }
 
-func KeywordIDIn(field string, vt ValueTransformer[[]ID, []ID]) SearchHandler {
+func KeywordIDIn(field string, vts ...ValueTransformer[[]ID, []ID]) SearchHandler {
 	return KeywordStatement(field, OperatorIn, func(value string) any {
 		ids := IDsFromCommaSeparatedString(value)
-		if vt != nil {
-			ids = vt(ids)
-			if len(ids) == 0 {
-				return nil
+		for _, vt := range vts {
+			if vt != nil {
+				ids = vt(ids)
+				if len(ids) == 0 {
+					return nil
+				}
 			}
 		}
 		return ids
 	})
 }
 
-func KeywordLike(field string, vt ValueTransformer[string, any]) SearchHandler {
+func KeywordLike(field string, vts ...ValueTransformer[string, any]) SearchHandler {
 	return KeywordStatement(field, OperatorLike, func(value string) any {
 		var anyValue any = value
-		if vt != nil {
-			anyValue = vt(value)
+		for _, vt := range vts {
+			if vt != nil {
+				anyValue = vt(value)
+			}
 		}
 		return fmt.Sprintf("%%%s%%", anyValue)
 	})
 }
 
-func KeywordEqual(field string, vt ValueTransformer[string, any]) SearchHandler {
-	return KeywordStatement(field, OperatorEqual, vt)
+func KeywordEqual(field string, vts ...ValueTransformer[string, any]) SearchHandler {
+	return KeywordStatement(field, OperatorEqual, vts...)
 }
 
 func SortBy(field string) SearchHandler {
@@ -219,9 +218,9 @@ func OverflowedArrayTrimmerFilter[T any](max int) func([]T) []T {
 func GetSearchValuesFromContext(context *gin.Context) (url.Values, error) {
 	var searchValues = make(url.Values)
 
-	if context.Request.Method != http.MethodGet {
+	if context.Request.Method != http.MethodGet && context.Request.ContentLength != 0 {
 		var bodyPayload map[string]string
-		err := context.ShouldBindJSON(&bodyPayload)
+		err := context.ShouldBindJSON(&bodyPayload) // This will panic if ContentLength is zero
 		if err != nil {
 			return nil, err
 		}

@@ -21,75 +21,6 @@ var (
 	ErrorBaseURLRequired       = errors.New("BaseURL is required")
 )
 
-type CrudyOption[T any] interface {
-	Apply(*Crudy[T]) error
-}
-
-type CrudyBasicOptions[T any] struct {
-	CrudyOption[T]
-	BaseURL             string
-	HttpClient          *http.Client
-	OkayHttpStatusRange *HttpStatusRange
-}
-
-func (b CrudyBasicOptions[T]) Apply(crudy *Crudy[T]) error {
-	if b.BaseURL != "" {
-		crudy.baseURL = b.BaseURL
-	}
-	if b.HttpClient != nil {
-		crudy.httpClient = b.HttpClient
-	}
-	if b.OkayHttpStatusRange != nil {
-		crudy.okayHttpStatusRange = b.OkayHttpStatusRange
-	}
-	return nil
-}
-
-type CrudyPageOptions[T any] struct {
-	CrudyOption[T]
-	DefaultSize uint64
-}
-
-func (b CrudyPageOptions[T]) Apply(crudy *Crudy[T]) error {
-	crudy.defaultPageSize = b.DefaultSize
-	return nil
-}
-
-func NewCrudy[T any](baseURL string, options ...CrudyOption[T]) (*Crudy[T], error) {
-	crudy := &Crudy[T]{
-		baseURL: baseURL,
-	}
-
-	for _, option := range options {
-		err := option.Apply(crudy)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if crudy.baseURL == "" {
-		return nil, ErrorBaseURLRequired
-	}
-
-	_, err := url.Parse(baseURL)
-	if err != nil {
-		return nil, err
-	}
-
-	if crudy.httpClient == nil {
-		crudy.httpClient = http.DefaultClient
-	}
-	if crudy.okayHttpStatusRange == nil {
-		crudy.okayHttpStatusRange = &DefaultOkayHttpStatusRange
-	}
-
-	if crudy.defaultPageSize == 0 {
-		crudy.defaultPageSize = DefaultPageSize
-	}
-
-	return crudy, nil
-}
-
 func MakeJSONRequest[T any](
 	httpClient *http.Client, okayHttpStatusRange *HttpStatusRange,
 	u *url.URL, method string,
@@ -145,12 +76,58 @@ func MakeJSONRequest[T any](
 	return nil
 }
 
+type CrudyOption[T any] interface {
+	Apply(*Crudy[T]) error
+}
+
+type CrudyBasicOptions[T any] struct {
+	CrudyOption[T]
+	BaseURL             string
+	HttpClient          *http.Client
+	OkayHttpStatusRange *HttpStatusRange
+}
+
+func (b CrudyBasicOptions[T]) Apply(crudy *Crudy[T]) error {
+	if b.BaseURL != "" {
+		crudy.baseURL = b.BaseURL
+	}
+	if b.HttpClient != nil {
+		crudy.httpClient = b.HttpClient
+	}
+	if b.OkayHttpStatusRange != nil {
+		crudy.okayHttpStatusRange = b.OkayHttpStatusRange
+	}
+	return nil
+}
+
+type CrudyPageOptions[T any] struct {
+	CrudyOption[T]
+	DefaultSize uint64
+}
+
+func (b CrudyPageOptions[T]) Apply(crudy *Crudy[T]) error {
+	crudy.defaultPageSize = b.DefaultSize
+	return nil
+}
+
 type Crudy[T any] struct {
 	baseURL             string
 	httpClient          *http.Client
 	okayHttpStatusRange *HttpStatusRange // okayHttpStatusRange[0] <= status code < okayHttpStatusRange[1]
 
 	defaultPageSize uint64
+}
+
+func (c *Crudy[T]) stringifySearchParams(searchParams ...SearchParams) (io.Reader, error) {
+	if len(searchParams) == 0 {
+		return nil, nil
+	}
+
+	body, err := json.Marshal(MergeMaps(nil, searchParams...))
+	if err != nil {
+		return nil, err
+	}
+	return bytes.NewBuffer(body), nil
 }
 
 func (c *Crudy[T]) BuildURL(uri string, searchParams SearchParams) (*url.URL, error) {
@@ -168,90 +145,13 @@ func (c *Crudy[T]) BuildURL(uri string, searchParams SearchParams) (*url.URL, er
 	return u, nil
 }
 
-func (c *Crudy[T]) Page(current, size uint64, searchParams SearchParams) ([]T, error) {
-	if current <= 0 {
-		current = 1
-	}
-	if size <= 0 {
-		size = c.defaultPageSize
-	}
-
-	u, err := c.BuildURL(fmt.Sprintf("/page/%d/%d", current, size), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := json.Marshal(searchParams)
-	if err != nil {
-		return nil, err
-	}
-
-	var res R[[]T]
-	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodPost, bytes.NewReader(body), &res)
-	if err != nil {
-		return nil, err
-	}
-
-	return res.Data, nil
-}
-
-func (c *Crudy[T]) All(searchParams SearchParams) ([]T, error) {
-	u, err := c.BuildURL("/all", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := json.Marshal(searchParams)
-	if err != nil {
-		return nil, err
-	}
-
-	var res R[[]T]
-	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodPost, bytes.NewReader(body), &res)
-	if err != nil {
-		return nil, err
-	}
-
-	return res.Data, nil
-}
-
-func (c *Crudy[T]) Count(searchParams SearchParams) (uint64, error) {
-	u, err := c.BuildURL("/count", searchParams)
-	if err != nil {
-		return 0, err
-	}
-
-	var res R[uint64]
-	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodGet, nil, &res)
-	if err != nil {
-		return 0, err
-	}
-
-	return res.Data, nil
-}
-
-func (c *Crudy[T]) One(id ID) (*T, error) {
-	u, err := c.BuildURL(fmt.Sprintf("/one/%d", id), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var res R[T]
-	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodGet, nil, &res)
-	if err != nil {
-		return nil, err
-	}
-
-	return &res.Data, nil
-}
-
-func (c *Crudy[T]) Save(t *T) (*T, error) {
+func (c *Crudy[T]) Save(record *T) (*T, error) {
 	u, err := c.BuildURL("", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	content, err := json.Marshal(t)
+	content, err := json.Marshal(record)
 	if err != nil {
 		return nil, err
 	}
@@ -265,8 +165,90 @@ func (c *Crudy[T]) Save(t *T) (*T, error) {
 	return &res.Data, nil
 }
 
-func (c *Crudy[T]) Delete(id ID) (bool, error) {
-	u, err := c.BuildURL(fmt.Sprintf("/%d", id), nil)
+func (c *Crudy[T]) All(searchParams ...SearchParams) ([]T, error) {
+	u, err := c.BuildURL("/all", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := c.stringifySearchParams(searchParams...)
+	if err != nil {
+		return nil, err
+	}
+
+	var res R[[]T]
+	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodPost, body, &res)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Data, nil
+}
+
+func (c *Crudy[T]) Page(current, size uint64, searchParams ...SearchParams) ([]T, error) {
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = c.defaultPageSize
+	}
+
+	u, err := c.BuildURL(fmt.Sprintf("/page/%d/%d", current, size), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := c.stringifySearchParams(searchParams...)
+	if err != nil {
+		return nil, err
+	}
+
+	var res R[[]T]
+	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodPost, body, &res)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Data, nil
+}
+
+func (c *Crudy[T]) Count(searchParams ...SearchParams) (uint64, error) {
+	u, err := c.BuildURL("/count", nil)
+	if err != nil {
+		return 0, err
+	}
+
+	body, err := c.stringifySearchParams(searchParams...)
+	if err != nil {
+		return 0, err
+	}
+
+	var res R[uint64]
+	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodPost, body, &res)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.Data, nil
+}
+
+func (c *Crudy[T]) One(id ID, searchParams ...SearchParams) (*T, error) {
+	u, err := c.BuildURL(fmt.Sprintf("/one/%d", id), MergeMaps(nil, searchParams...))
+	if err != nil {
+		return nil, err
+	}
+
+	var res R[T]
+	err = MakeJSONRequest(c.httpClient, c.okayHttpStatusRange, u, http.MethodGet, nil, &res)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res.Data, nil
+}
+
+func (c *Crudy[T]) Delete(id ID, searchParams ...SearchParams) (bool, error) {
+	u, err := c.BuildURL(fmt.Sprintf("/%d", id), MergeMaps(nil, searchParams...))
 	if err != nil {
 		return false, err
 	}
@@ -278,4 +260,39 @@ func (c *Crudy[T]) Delete(id ID) (bool, error) {
 	}
 
 	return res.Data, nil
+}
+
+func NewCrudy[T any](baseURL string, options ...CrudyOption[T]) (*Crudy[T], error) {
+	crudy := &Crudy[T]{
+		baseURL: baseURL,
+	}
+
+	for _, option := range options {
+		err := option.Apply(crudy)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if crudy.baseURL == "" {
+		return nil, ErrorBaseURLRequired
+	}
+
+	_, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	if crudy.httpClient == nil {
+		crudy.httpClient = http.DefaultClient
+	}
+	if crudy.okayHttpStatusRange == nil {
+		crudy.okayHttpStatusRange = &DefaultOkayHttpStatusRange
+	}
+
+	if crudy.defaultPageSize == 0 {
+		crudy.defaultPageSize = DefaultPageSize
+	}
+
+	return crudy, nil
 }
