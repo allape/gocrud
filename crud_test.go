@@ -566,7 +566,7 @@ func TestAddNoCacheHeaders(t *testing.T) {
 }
 
 //goland:noinspection GoUnusedFunction
-func testRunCrudServer(t *testing.T) {
+func _TestRunCrudServer(t *testing.T) {
 	db, engine, err := basicSetup("TestStartServer.db")
 	if err != nil {
 		t.Fatal(err)
