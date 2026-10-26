@@ -248,6 +248,18 @@ func TestNormalUser(t *testing.T) {
 		t.Fatal("user freak is not nil")
 	}
 
+	// test order by id
+	pageOrderById, err := crudy.Page(1, 2, SearchParams{
+		"orderBy_id": "desc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	} else if len(pageOrderById) != 2 {
+		t.Fatalf("expect 2, got %d", len(pageOrderById))
+	} else if pageOrderById[0].Name != "test2" {
+		t.Fatalf("expect test2, got %v", pageOrderById[0].Name)
+	}
+
 	// test get all
 	all, err := crudy.All(SearchParams{
 		"name":  "test",
@@ -258,7 +270,11 @@ func TestNormalUser(t *testing.T) {
 	} else if all == nil {
 		t.Fatal("response is nil")
 	} else if len(all) != 2 {
-		t.Fatal("length is not 2")
+		t.Fatalf("expect 2, got %d", len(all))
+	} else if all[0].Name != "test1" {
+		t.Fatalf("expect test1, got %v", all[0].Name)
+	} else if all[1].Name != "test2" {
+		t.Fatalf("expect test2, got %v", all[1].Name)
 	}
 
 	// test KeywordStatement

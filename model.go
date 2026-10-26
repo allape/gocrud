@@ -44,6 +44,7 @@ func NewBaseSearchHandlers(extra ...SearchHandlers) SearchHandlers {
 			"in_id":   KeywordIDIn("id"),
 			"deleted": NewSoftDeleteSearchHandler(""),
 
+			"orderBy_id":        SortBy("id"),
 			"orderBy_createdAt": SortBy("created_at"),
 			"orderBy_updatedAt": SortBy("updated_at"),
 			"orderBy_deletedAt": SortBy("deleted_at"),
