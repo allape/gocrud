@@ -252,7 +252,7 @@ func TestTextTrimAndNorm(t *testing.T) {
 
 func wait(t *testing.T) {
 	for i := 3; i > 0; i-- {
-		t.Logf("...%d", i)
+		t.Logf("%d...", i)
 		time.Sleep(time.Second)
 	}
 }

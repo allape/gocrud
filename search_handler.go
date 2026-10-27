@@ -61,6 +61,8 @@ func MergeSearchHandlers(searchHandlers SearchHandlers, extraSearchHandlers ...S
 type (
 	Operator                       string
 	ValueTransformer[T any, R any] func(value T) R
+	AnyValueTransformer            ValueTransformer[string, any]
+	StringValueTransformer         ValueTransformer[string, string]
 )
 
 var (
@@ -101,22 +103,27 @@ var Operators = []Operator{
 	OperatorNeq,
 }
 
-func KeywordStatement(field string, operator Operator, vts ...ValueTransformer[string, any]) SearchHandler {
+func KeywordStatement(field string, operator Operator, vts ...AnyValueTransformer) SearchHandler {
 	if !slices.Contains(Operators, operator) {
 		panic(fmt.Sprintf("operator %s is not a valid operator", operator))
 	}
 
 	return func(db *gorm.DB, values []string, _ *gin.Context) (*gorm.DB, error) {
 		if value, ok := PickFirstValuableString(values); ok {
-			var anyValue any = value
+			var anyValue any = nil
 
 			for _, vt := range vts {
 				if vt != nil {
-					anyValue = vt(value)
-					if anyValue == nil {
-						return db, nil
+					v := vt(value)
+					if v != nil {
+						anyValue = v
+						break
 					}
 				}
+			}
+
+			if anyValue == nil {
+				return db, nil
 			}
 
 			if operator == OperatorIn || operator == OperatorNotIn {
@@ -125,8 +132,16 @@ func KeywordStatement(field string, operator Operator, vts ...ValueTransformer[s
 				}
 			}
 
+			stat := TernaryFunc(func() bool {
+				return strings.Contains(field, ".") || strings.Contains(field, "`")
+			}, func() string {
+				return fmt.Sprintf("%s %s ?", field, operator)
+			}, func() string {
+				return fmt.Sprintf("`%s` %s ?", field, operator)
+			})
+
 			db = db.Where(
-				fmt.Sprintf("`%s` %s ?", field, operator),
+				stat,
 				anyValue,
 			)
 		}
@@ -140,12 +155,18 @@ func KeywordIn(field string, vts ...ValueTransformer[[]string, []string]) Search
 		array := strings.Split(value, ",")
 		for _, vt := range vts {
 			if vt != nil {
-				array = vt(array)
-				if len(array) == 0 {
-					return nil
+				v := vt(array)
+				if len(v) > 0 {
+					array = v
+					break
 				}
 			}
 		}
+
+		if len(array) == 0 {
+			return nil
+		}
+
 		return array
 	})
 }
@@ -155,30 +176,52 @@ func KeywordIDIn(field string, vts ...ValueTransformer[[]ID, []ID]) SearchHandle
 		ids := IDsFromCommaSeparatedString(value)
 		for _, vt := range vts {
 			if vt != nil {
-				ids = vt(ids)
-				if len(ids) == 0 {
-					return nil
+				v := vt(ids)
+				if len(v) > 0 {
+					ids = v
+					break
 				}
 			}
 		}
+
+		if len(ids) == 0 {
+			return nil
+		}
+
 		return ids
 	})
 }
 
-func KeywordLike(field string, vts ...ValueTransformer[string, any]) SearchHandler {
+func KeywordLike(field string, vts ...StringValueTransformer) SearchHandler {
 	return KeywordStatement(field, OperatorLike, func(value string) any {
-		var anyValue any = value
 		for _, vt := range vts {
 			if vt != nil {
-				anyValue = vt(value)
+				v := vt(value)
+				if v != "" {
+					value = v
+					break
+				}
 			}
 		}
-		return fmt.Sprintf("%%%s%%", anyValue)
+
+		if value == "" {
+			return nil
+		}
+
+		return fmt.Sprintf("%%%s%%", value)
 	})
 }
 
-func KeywordEqual(field string, vts ...ValueTransformer[string, any]) SearchHandler {
-	return KeywordStatement(field, OperatorEqual, vts...)
+func KeywordEqual(field string, vts ...StringValueTransformer) SearchHandler {
+	return KeywordStatement(
+		field,
+		OperatorEqual,
+		CastSlice(vts, func(t StringValueTransformer) AnyValueTransformer {
+			return func(value string) any {
+				return t(value)
+			}
+		})...,
+	)
 }
 
 func SortBy(field string) SearchHandler {

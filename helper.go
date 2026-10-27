@@ -159,3 +159,11 @@ func MergeMaps[Map ~map[K]V, K comparable, V any](base Map, extraMaps ...Map) Ma
 	}
 	return base
 }
+
+func CastSlice[T any, E any](v []T, f func(T) E) []E {
+	out := make([]E, len(v))
+	for i, x := range v {
+		out[i] = f(x)
+	}
+	return out
+}

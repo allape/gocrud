@@ -147,9 +147,9 @@ func TestNormalUser(t *testing.T) {
 				return value
 			}),
 			"field_not_found": KeywordLike("field_not_found"),
-			"like_name":       KeywordLike("name"),
-			"name":            KeywordLike("name"),
-			"name_eq":         KeywordEqual("name"),
+			"like_name":       KeywordLike("name", TextTrimAndNorm),
+			"name":            KeywordLike("name", TextTrimAndNorm),
+			"name_eq":         KeywordEqual("name", TextTrimAndNorm),
 			"age_gte":         KeywordStatement("age", OperatorGte, NumericValidate),
 		}),
 		BeforeGetAll: func(context *gin.Context, db *gorm.DB) *gorm.DB {
