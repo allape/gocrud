@@ -146,6 +146,7 @@ func TestNormalUser(t *testing.T) {
 				t.Log("id filter:", value)
 				return value
 			}),
+			"id_eq":           KeywordEqual("id"),
 			"field_not_found": KeywordLike("field_not_found"),
 			"like_name":       KeywordLike("name", TextTrimAndNorm),
 			"name":            KeywordLike("name", TextTrimAndNorm),
@@ -286,7 +287,7 @@ func TestNormalUser(t *testing.T) {
 	} else if all == nil {
 		t.Fatal("response is nil")
 	} else if len(all) != 1 {
-		t.Fatal("length is not 1")
+		t.Fatalf("expect 1, got %d", len(all))
 	}
 
 	// test KeywordStatement
@@ -298,7 +299,7 @@ func TestNormalUser(t *testing.T) {
 	} else if all == nil {
 		t.Fatal("response is nil")
 	} else if len(all) != 2 {
-		t.Fatal("length is not 2")
+		t.Fatalf("expect 2, got %d", len(all))
 	}
 
 	// test get all with id filter
@@ -310,7 +311,19 @@ func TestNormalUser(t *testing.T) {
 	} else if all == nil {
 		t.Fatal("response is nil")
 	} else if len(all) != 1 {
-		t.Fatal("length is not 1")
+		t.Fatalf("expect 1, got %d", len(all))
+	}
+
+	// test id eq
+	all, err = crudy.Page(1, 10, SearchParams{
+		"id_eq": "1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	} else if all == nil {
+		t.Fatal("response is nil")
+	} else if len(all) != 1 {
+		t.Fatalf("expect 1, got %d", len(all))
 	}
 
 	// test page
@@ -379,7 +392,7 @@ func TestNormalUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	} else if count != 1 {
-		t.Fatal("response data count is not 1")
+		t.Fatalf("expect 1, got %d", count)
 	}
 
 	// test deleted user

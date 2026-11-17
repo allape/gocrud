@@ -112,14 +112,18 @@ func KeywordStatement(field string, operator Operator, vts ...AnyValueTransforme
 		if value, ok := PickFirstValuableString(values); ok {
 			var anyValue any = nil
 
-			for _, vt := range vts {
-				if vt != nil {
-					v := vt(value)
-					if v != nil {
-						anyValue = v
-						break
+			if len(vts) > 0 {
+				for _, vt := range vts {
+					if vt != nil {
+						v := vt(value)
+						if v != nil {
+							anyValue = v
+							break
+						}
 					}
 				}
+			} else {
+				anyValue = value
 			}
 
 			if anyValue == nil {
